@@ -8,3 +8,34 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface Session {
+  /** Session slot number (1-5) */
+  slot: number;
+  /** Time range for this session */
+  time: string;
+  /** Subject code */
+  subject: string;
+}
+
+export interface DaySchedule {
+  /** Date string (DD-Mon-YY) */
+  date: string;
+  /** Day of the week */
+  day: string;
+  /** Week identifier */
+  week: string;
+  sessions: Session[];
+}
+
+export interface ScheduleData {
+  /** All unique subject codes in the schedule */
+  subjects: string[];
+  schedule: DaySchedule[];
+  /** ISO timestamp of last data fetch */
+  lastFetched: string;
+}
+
+export interface ErrorResponse {
+  error: string;
+}

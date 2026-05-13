@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: schedule
+    description: Lecture schedule operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /schedule:
+    get:
+      operationId: getSchedule
+      tags: [schedule]
+      summary: Get lecture schedule
+      description: Returns the full lecture schedule parsed from the Google Sheet, with caching
+      responses:
+        "200":
+          description: Schedule data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleData"
+        "500":
+          description: Failed to fetch schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +54,66 @@ components:
           type: string
       required:
         - status
-
+    Session:
+      type: object
+      properties:
+        slot:
+          type: integer
+          description: Session slot number (1-5)
+        time:
+          type: string
+          description: Time range for this session
+        subject:
+          type: string
+          description: Subject code
+      required:
+        - slot
+        - time
+        - subject
+    DaySchedule:
+      type: object
+      properties:
+        date:
+          type: string
+          description: Date string (DD-Mon-YY)
+        day:
+          type: string
+          description: Day of the week
+        week:
+          type: string
+          description: Week identifier
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Session"
+      required:
+        - date
+        - day
+        - week
+        - sessions
+    ScheduleData:
+      type: object
+      properties:
+        subjects:
+          type: array
+          items:
+            type: string
+          description: All unique subject codes in the schedule
+        schedule:
+          type: array
+          items:
+            $ref: "#/components/schemas/DaySchedule"
+        lastFetched:
+          type: string
+          description: ISO timestamp of last data fetch
+      required:
+        - subjects
+        - schedule
+        - lastFetched
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error

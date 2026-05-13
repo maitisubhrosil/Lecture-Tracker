@@ -14,3 +14,28 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * Returns the full lecture schedule parsed from the Google Sheet, with caching
+ * @summary Get lecture schedule
+ */
+export const GetScheduleResponse = zod.object({
+  subjects: zod
+    .array(zod.string())
+    .describe("All unique subject codes in the schedule"),
+  schedule: zod.array(
+    zod.object({
+      date: zod.string().describe("Date string (DD-Mon-YY)"),
+      day: zod.string().describe("Day of the week"),
+      week: zod.string().describe("Week identifier"),
+      sessions: zod.array(
+        zod.object({
+          slot: zod.number().describe("Session slot number (1-5)"),
+          time: zod.string().describe("Time range for this session"),
+          subject: zod.string().describe("Subject code"),
+        }),
+      ),
+    }),
+  ),
+  lastFetched: zod.string().describe("ISO timestamp of last data fetch"),
+});

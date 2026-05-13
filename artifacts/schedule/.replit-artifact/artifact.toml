@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Lecture Schedule"
+version = "1.0.0"
+id = "artifacts/schedule"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23496
+
+[services.development]
+run = "pnpm --filter @workspace/schedule run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/schedule", "run", "build" ]
+publicDir = "artifacts/schedule/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23496"
+BASE_PATH = "/"
