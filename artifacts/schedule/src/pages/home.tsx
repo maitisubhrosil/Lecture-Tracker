@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
-import { useGetSchedule } from "@workspace/api-client-react";
-import { Clock, RefreshCw, AlertCircle } from "lucide-react";
+import { useScheduleData } from "@/lib/useScheduleData";
+import { Clock, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -69,7 +69,7 @@ function isSameCalendarDay(a: Date, b: Date) {
 }
 
 export default function Home() {
-  const { data, isLoading, isError, refetch } = useGetSchedule();
+  const { data, isLoading, isError, refetch } = useScheduleData();
 
   const [selectedSubjects, setSelectedSubjects] = useState<Set<string>>(new Set());
   const [appliedSubjects, setAppliedSubjects] = useState<Set<string>>(new Set());
@@ -137,7 +137,7 @@ export default function Home() {
 
   if (isError) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-indigo-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 max-w-sm w-full text-center space-y-4">
           <div className="text-5xl">😵</div>
           <h2 className="text-lg font-semibold text-gray-900">couldn't load the schedule</h2>
@@ -152,9 +152,9 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50/40 to-blue-50 pb-20">
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-gray-100">
+      <header className="sticky top-0 z-10 bg-indigo-50/90 backdrop-blur-md border-b border-indigo-100/60">
         <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-bold tracking-tight text-gray-900">
