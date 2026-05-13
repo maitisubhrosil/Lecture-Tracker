@@ -111,6 +111,14 @@ function parseSchedule(csvText: string): ScheduleData {
     ];
   }
 
+  const EXCLUDED_SUBJECTS = new Set([
+    "Buffer slot",
+    "Conclusion of In-Campus II",
+    "Id ul Zuha",
+    "Muharram",
+    "Work Shop (CR203)",
+  ]);
+
   const schedule: DaySchedule[] = [];
   const subjectsSet = new Set<string>();
   let currentWeek = "";
@@ -144,7 +152,7 @@ function parseSchedule(csvText: string): ScheduleData {
     for (let i = 0; i < 5; i++) {
       const subject = (row[4 + i] || "").trim();
       const time = times[i] || "";
-      if (subject && time) {
+      if (subject && time && !EXCLUDED_SUBJECTS.has(subject)) {
         subjectsSet.add(subject);
         sessions.push({ slot: i + 1, time, subject });
       }
