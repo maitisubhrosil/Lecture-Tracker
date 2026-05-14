@@ -56,7 +56,7 @@ jobs:
         env:
           NODE_ENV: production
           PORT: "3000"
-          BASE_PATH: "./"
+          BASE_PATH: "/${{ github.event.repository.name }}/"
         run: pnpm --filter @workspace/schedule run build
 
       - name: Setup Pages
