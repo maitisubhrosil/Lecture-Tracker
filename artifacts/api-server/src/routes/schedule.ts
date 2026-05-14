@@ -24,8 +24,14 @@ interface ScheduleData {
   lastFetched: string;
 }
 
+export type { ScheduleData };
+
 let cachedData: ScheduleData | null = null;
 let lastFetchDate: string | null = null;
+
+export function getCachedSchedule(): ScheduleData | null {
+  return cachedData;
+}
 
 function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
