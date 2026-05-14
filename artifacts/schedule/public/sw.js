@@ -1,5 +1,5 @@
-const CACHE_NAME = "epgp-schedule-v1";
-const DATA_CACHE = "epgp-data-v1";
+const CACHE_NAME = "epgp-schedule-v2";
+const DATA_CACHE = "epgp-data-v2";
 
 const STATIC_ASSETS = [
   "./",
