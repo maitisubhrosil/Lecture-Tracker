@@ -32,6 +32,11 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
+  // Never cache (or even handle) cross-origin API requests — let them go through directly.
+  // The Worker handles CORS and serves push CRUD endpoints.
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.includes("/api/")) return;
+
   if (
     url.pathname.endsWith("schedule-data.json") ||
     url.pathname.endsWith("/schedule")

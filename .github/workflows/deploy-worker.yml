@@ -1,0 +1,46 @@
+name: Deploy Worker (Cloudflare)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "artifacts/worker/**"
+      - "lib/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/deploy-worker.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: worker-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck worker
+        run: pnpm --filter @workspace/worker run typecheck
+
+      - name: Publish to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: artifacts/worker
+          command: deploy
+          # Secrets are configured once via `wrangler secret put` (see DEPLOY.md).
+          # The Worker reads them at runtime from the platform env.

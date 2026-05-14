@@ -47,3 +47,18 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+
+# Secrets — never commit
+.env
+*/.env
+**/.env
+.dev.vars
+*/.dev.vars
+**/.dev.vars
+
+# Cloudflare wrangler cache
+.wrangler/
+
+# Local push-store dev data
+artifacts/api-server/data/

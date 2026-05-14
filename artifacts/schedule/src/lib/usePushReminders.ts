@@ -10,6 +10,17 @@ export interface Reminder {
 
 const ENDPOINT_KEY = "epgp_push_endpoint";
 
+// API base URL — empty string means "same origin" (uses Vite dev proxy or Pages rewrite).
+// On GitHub Pages we build with VITE_API_BASE_URL=https://<worker>.workers.dev/api
+const API_BASE: string = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+
+function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
+// useScheduleData uses a separate URL constant — re-export so it picks up the same base
+export const API_SCHEDULE_URL = apiUrl("/api/schedule");
+
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -63,7 +74,7 @@ export function usePushReminders() {
       if (perm !== "granted") return null;
 
       const reg = await registerSW();
-      const { publicKey } = await fetchJSON<{ publicKey: string }>("/api/push/vapid-public-key");
+      const { publicKey } = await fetchJSON<{ publicKey: string }>(apiUrl("/api/push/vapid-public-key"));
       let sub = await reg.pushManager.getSubscription();
       if (!sub) {
         try {
@@ -78,7 +89,7 @@ export function usePushReminders() {
         }
       }
       const subJSON = sub.toJSON();
-      await fetchJSON("/api/push/subscribe", {
+      await fetchJSON(apiUrl("/api/push/subscribe"), {
         method: "POST",
         body: JSON.stringify({ subscription: subJSON }),
       });
@@ -98,7 +109,7 @@ export function usePushReminders() {
     if (!ep) return;
     try {
       const data = await fetchJSON<{ reminders: Reminder[] }>(
-        `/api/push/reminders?endpoint=${encodeURIComponent(ep)}`,
+        apiUrl(`/api/push/reminders?endpoint=${encodeURIComponent(ep)}`),
       );
       setReminders(data.reminders);
     } catch {
@@ -117,7 +128,7 @@ export function usePushReminders() {
           if (existing) {
             const ep = existing.endpoint;
             // Re-sync on backend (subscription may not exist server-side)
-            await fetchJSON("/api/push/subscribe", {
+            await fetchJSON(apiUrl("/api/push/subscribe"), {
               method: "POST",
               body: JSON.stringify({ subscription: existing.toJSON() }),
             }).catch(() => {});
@@ -146,7 +157,7 @@ export function usePushReminders() {
       if (!ep) ep = await subscribe();
       if (!ep) throw new Error("Notifications not enabled");
       const res = await fetchJSON<{ reminder: Reminder; reminders: Reminder[] }>(
-        "/api/push/reminders",
+        apiUrl("/api/push/reminders"),
         { method: "POST", body: JSON.stringify({ endpoint: ep, reminder: r }) },
       );
       setReminders(res.reminders);
@@ -159,7 +170,7 @@ export function usePushReminders() {
     async (id: string) => {
       if (!endpoint) return;
       const res = await fetchJSON<{ reminders: Reminder[] }>(
-        `/api/push/reminders/${encodeURIComponent(id)}?endpoint=${encodeURIComponent(endpoint)}`,
+        apiUrl(`/api/push/reminders/${encodeURIComponent(id)}?endpoint=${encodeURIComponent(endpoint)}`),
         { method: "DELETE" },
       );
       setReminders(res.reminders);
@@ -169,7 +180,7 @@ export function usePushReminders() {
 
   const clearAll = useCallback(async () => {
     if (!endpoint) return;
-    await fetchJSON(`/api/push/reminders?endpoint=${encodeURIComponent(endpoint)}`, {
+    await fetchJSON(apiUrl(`/api/push/reminders?endpoint=${encodeURIComponent(endpoint)}`), {
       method: "DELETE",
     });
     setReminders([]);
