@@ -14,6 +14,13 @@ const ENDPOINT_KEY = "epgp_push_endpoint";
 // On GitHub Pages we build with VITE_API_BASE_URL=https://<worker>.workers.dev/api
 const API_BASE: string = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 
+// Vite's BASE_URL includes the deployment subpath (for example, /Lecture-Tracker/
+// on GitHub Pages). Service workers must be registered from that path instead of
+// the domain root, otherwise notification subscription fails with a misleading
+// "enable browser notifications" error even when the permission is already granted.
+const APP_BASE = import.meta.env.BASE_URL || "/";
+const SW_URL = `${APP_BASE}sw.js`;
+
 function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
@@ -58,8 +65,10 @@ export function usePushReminders() {
   // Register SW once
   const registerSW = useCallback(async () => {
     if (!("serviceWorker" in navigator)) throw new Error("SW unsupported");
-    let reg = await navigator.serviceWorker.getRegistration("/sw.js");
-    if (!reg) reg = await navigator.serviceWorker.register("/sw.js");
+    let reg = await navigator.serviceWorker.getRegistration(SW_URL);
+    if (!reg) {
+      reg = await navigator.serviceWorker.register(SW_URL, { scope: APP_BASE });
+    }
     await navigator.serviceWorker.ready;
     return reg;
   }, []);
