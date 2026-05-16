@@ -14,7 +14,7 @@ crons = ["* * * * *"]
 # After running `wrangler kv namespace create EPGP_KV`, paste the id below.
 [[kv_namespaces]]
 binding = "EPGP_KV"
-id = "REPLACE_WITH_KV_ID_AFTER_FIRST_CREATE"
+id = "032728f47f7c4bf99318fc77de550362"
 
 # Public env vars (safe to commit)
 [vars]
