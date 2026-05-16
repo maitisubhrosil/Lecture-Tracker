@@ -19,6 +19,7 @@ id = "032728f47f7c4bf99318fc77de550362"
 # Public env vars (safe to commit)
 [vars]
 VAPID_SUBJECT = "mailto:admin@example.com"
+APP_TIME_ZONE = "Asia/Kolkata"
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1VZauPSkJxNduZixiecFjoF0c0BmH7NNY6nBNNSnbJac/export?format=csv&gid=502725552"
 
 # Secrets (set via `wrangler secret put VAPID_PUBLIC_KEY` etc., NEVER commit):
