@@ -57,6 +57,10 @@ jobs:
           NODE_ENV: production
           PORT: "3000"
           BASE_PATH: "/${{ github.event.repository.name }}/"
+          # Worker URL for production. Set this as a repo variable:
+          #   Settings → Secrets and variables → Actions → Variables → New repo variable
+          #   Name: WORKER_API_BASE_URL  Value: https://epgp-reminders.<your-cf-subdomain>.workers.dev
+          VITE_API_BASE_URL: ${{ vars.WORKER_API_BASE_URL }}
         run: pnpm --filter @workspace/schedule run build
 
       - name: Setup Pages

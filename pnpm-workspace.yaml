@@ -4,6 +4,11 @@ packages:
   - lib/integrations/*
   - scripts
 
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true
+
 autoInstallPeers: false
 
 catalog:

@@ -20,7 +20,8 @@ export interface ScheduleData {
 }
 
 const STATIC_JSON_URL = "./schedule-data.json";
-const API_URL = "/api/schedule";
+const API_BASE: string = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+const API_URL = `${API_BASE}/api/schedule`;
 const CACHE_KEY = "epgp_schedule_data";
 const CACHE_DATE_KEY = "epgp_schedule_date";
 

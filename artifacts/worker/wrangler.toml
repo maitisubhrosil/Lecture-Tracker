@@ -1,0 +1,30 @@
+# wrangler.toml — Cloudflare Worker config for ePGP Schedule reminders API
+# After editing: `pnpm --filter @workspace/worker exec wrangler deploy`
+
+name = "epgp-reminders"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cron trigger — every minute. Cloudflare guarantees execution.
+[triggers]
+crons = ["* * * * *"]
+
+# KV namespace for subscriptions + reminders + sent-dedupe state
+# After running `wrangler kv namespace create EPGP_KV`, paste the id below.
+[[kv_namespaces]]
+binding = "EPGP_KV"
+id = "032728f47f7c4bf99318fc77de550362"
+
+# Public env vars (safe to commit)
+[vars]
+VAPID_SUBJECT = "mailto:admin@example.com"
+SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1VZauPSkJxNduZixiecFjoF0c0BmH7NNY6nBNNSnbJac/export?format=csv&gid=502725552"
+
+# Secrets (set via `wrangler secret put VAPID_PUBLIC_KEY` etc., NEVER commit):
+#   VAPID_PUBLIC_KEY
+#   VAPID_PRIVATE_KEY
+
+# Observability
+[observability]
+enabled = true

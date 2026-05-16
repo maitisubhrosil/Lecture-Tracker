@@ -1,0 +1,32 @@
+# Fly.io configuration for the ePGP api-server.
+# Change `app` to a unique name, then:
+#   fly launch --no-deploy --copy-config
+#   fly volumes create epgp_data --size 1 --region sin
+#   fly secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=...
+#   fly deploy
+
+app = "epgp-api"
+primary_region = "sin"
+
+[build]
+  dockerfile = "artifacts/api-server/Dockerfile"
+
+[env]
+  VAPID_SUBJECT = "mailto:admin@example.com"
+  PUSH_STORE_PATH = "/data/push-store.json"
+
+[[mounts]]
+  source = "epgp_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # CRITICAL: keep the machine running so the 60-second scheduler ticks 24/7
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

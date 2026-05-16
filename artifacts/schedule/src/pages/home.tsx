@@ -3,6 +3,7 @@ import { useScheduleData } from "@/lib/useScheduleData";
 import { Clock, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import RemindersSection from "@/components/RemindersSection";
 
 const SUBJECT_COLORS: Record<string, { chip: string; card: string; text: string; border: string }> = {
   CMT:  { chip: "bg-violet-500 text-white",  card: "bg-violet-50 border-violet-200",  text: "text-violet-700",  border: "border-violet-300" },
@@ -225,7 +226,10 @@ export default function Home() {
       </header>
 
       {/* Schedule */}
-      <main className="max-w-2xl mx-auto px-4 pt-6">
+      <main className="max-w-2xl mx-auto px-4 pt-6 space-y-4">
+        {!isLoading && allSubjects.length > 0 && (
+          <RemindersSection scheduleData={data} getSubjectColor={getSubjectColor} />
+        )}
         {isLoading ? (
           <div className="space-y-4">
             {[1, 2, 3].map(i => (
