@@ -10,6 +10,12 @@ export interface Reminder {
 
 const ENDPOINT_KEY = "epgp_push_endpoint";
 
+const APP_BASE_PATH = import.meta.env.BASE_URL.endsWith("/")
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+const SERVICE_WORKER_URL = `${APP_BASE_PATH}sw.js`;
+const SERVICE_WORKER_SCOPE = APP_BASE_PATH;
+
 // API base URL — empty string means "same origin" (uses Vite dev proxy or Pages rewrite).
 // On GitHub Pages we build with VITE_API_BASE_URL=https://<worker>.workers.dev/api
 const API_BASE: string = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
@@ -55,11 +61,16 @@ export function usePushReminders() {
     setSupported(ok);
   }, []);
 
-  // Register SW once
+  // Register SW once. Respect Vite's base path so this also works when the app
+  // is deployed under a subdirectory (for example GitHub Pages at /Lecture-Tracker/).
   const registerSW = useCallback(async () => {
     if (!("serviceWorker" in navigator)) throw new Error("SW unsupported");
-    let reg = await navigator.serviceWorker.getRegistration("/sw.js");
-    if (!reg) reg = await navigator.serviceWorker.register("/sw.js");
+    let reg = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_SCOPE);
+    if (!reg) {
+      reg = await navigator.serviceWorker.register(SERVICE_WORKER_URL, {
+        scope: SERVICE_WORKER_SCOPE,
+      });
+    }
     await navigator.serviceWorker.ready;
     return reg;
   }, []);
