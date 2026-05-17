@@ -8,6 +8,30 @@ export interface Reminder {
   createdAt: string;
 }
 
+export interface PushDiagnostics {
+  lastAttemptAt?: string;
+  lastAttemptType?: string;
+  lastAttemptStatus?: number;
+  lastSuccessAt?: string;
+  lastFailureAt?: string;
+  lastFailureReason?: string;
+  lastMatchedReminderAt?: string;
+}
+
+export type BrowserSupportKind =
+  | "android-chrome"
+  | "desktop-chromium"
+  | "ios"
+  | "unsupported"
+  | "other";
+
+export interface BrowserSupportInfo {
+  kind: BrowserSupportKind;
+  title: string;
+  detail: string;
+  recommended: boolean;
+}
+
 const ENDPOINT_KEY = "epgp_push_endpoint";
 
 // API base URL — empty string means "same origin" (uses Vite dev proxy or Pages rewrite).
@@ -56,6 +80,80 @@ async function fetchJSON<T>(
   return res.json() as Promise<T>;
 }
 
+export function getBrowserSupportInfo(): BrowserSupportInfo {
+  if (typeof navigator === "undefined") {
+    return {
+      kind: "other",
+      title: "Browser support unknown",
+      detail:
+        "Open this app in Chrome or Edge for the most reliable reminder delivery.",
+      recommended: false,
+    };
+  }
+
+  const ua = navigator.userAgent;
+  const hasPush =
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    typeof Notification !== "undefined";
+  const isIOS =
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/i.test(ua);
+  const isChromium = /(Chrome|CriOS|Edg|EdgA)\//.test(ua) && !/OPR\//.test(ua);
+
+  if (!hasPush) {
+    return {
+      kind: isIOS ? "ios" : "unsupported",
+      title: isIOS
+        ? "iPhone/iPad needs Home Screen install"
+        : "Push not supported here",
+      detail: isIOS
+        ? "On iOS/iPadOS, add this app to the Home Screen, open it from that icon, then enable reminders. Use calendar export as a fallback."
+        : "Try Chrome or Edge on Android/desktop, or use the calendar export fallback.",
+      recommended: false,
+    };
+  }
+
+  if (isIOS) {
+    return {
+      kind: "ios",
+      title: "iOS push has extra steps",
+      detail:
+        "If notifications do not appear, add the app to Home Screen and launch it from the icon before enabling reminders. Calendar export is the safest fallback.",
+      recommended: false,
+    };
+  }
+
+  if (isAndroid && isChromium) {
+    return {
+      kind: "android-chrome",
+      title: "Best supported: Chrome/Edge on Android",
+      detail:
+        "Allow notifications and keep Chrome notifications enabled in Android settings. Disable battery restrictions if delivery is delayed.",
+      recommended: true,
+    };
+  }
+
+  if (isChromium) {
+    return {
+      kind: "desktop-chromium",
+      title: "Desktop Chrome/Edge supported",
+      detail:
+        "Reminders work best while Chrome/Edge is running in the background. Use the test button after enabling notifications.",
+      recommended: true,
+    };
+  }
+
+  return {
+    kind: "other",
+    title: "Push support can vary in this browser",
+    detail:
+      "If reminders do not arrive, test in Chrome/Edge or use the calendar export fallback.",
+    recommended: false,
+  };
+}
+
 export function usePushStats() {
   const [activeSubscribers, setActiveSubscribers] = useState<number | null>(
     null,
@@ -85,6 +183,7 @@ export function usePushStats() {
 
 export function usePushReminders() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [diagnostics, setDiagnostics] = useState<PushDiagnostics>({});
   const [endpoint, setEndpoint] = useState<string | null>(() =>
     localStorage.getItem(ENDPOINT_KEY),
   );
@@ -143,10 +242,14 @@ export function usePushReminders() {
         }
       }
       const subJSON = sub.toJSON();
-      await fetchJSON(apiUrl("/api/push/subscribe"), {
-        method: "POST",
-        body: JSON.stringify({ subscription: subJSON }),
-      });
+      const data = await fetchJSON<{ diagnostics?: PushDiagnostics }>(
+        apiUrl("/api/push/subscribe"),
+        {
+          method: "POST",
+          body: JSON.stringify({ subscription: subJSON }),
+        },
+      );
+      setDiagnostics(data.diagnostics ?? {});
       localStorage.setItem(ENDPOINT_KEY, sub.endpoint);
       setEndpoint(sub.endpoint);
       return sub.endpoint;
@@ -162,10 +265,12 @@ export function usePushReminders() {
   const refreshReminders = useCallback(async (ep: string | null) => {
     if (!ep) return;
     try {
-      const data = await fetchJSON<{ reminders: Reminder[] }>(
-        apiUrl(`/api/push/reminders?endpoint=${encodeURIComponent(ep)}`),
-      );
+      const data = await fetchJSON<{
+        reminders: Reminder[];
+        diagnostics?: PushDiagnostics;
+      }>(apiUrl(`/api/push/reminders?endpoint=${encodeURIComponent(ep)}`));
       setReminders(data.reminders);
+      setDiagnostics(data.diagnostics ?? {});
     } catch {
       /* ignore */
     }
@@ -182,10 +287,14 @@ export function usePushReminders() {
           if (existing) {
             const ep = existing.endpoint;
             // Re-sync on backend (subscription may not exist server-side)
-            await fetchJSON(apiUrl("/api/push/subscribe"), {
-              method: "POST",
-              body: JSON.stringify({ subscription: existing.toJSON() }),
-            }).catch(() => {});
+            const data = await fetchJSON<{ diagnostics?: PushDiagnostics }>(
+              apiUrl("/api/push/subscribe"),
+              {
+                method: "POST",
+                body: JSON.stringify({ subscription: existing.toJSON() }),
+              },
+            ).catch(() => null);
+            if (data?.diagnostics) setDiagnostics(data.diagnostics);
             localStorage.setItem(ENDPOINT_KEY, ep);
             setEndpoint(ep);
             await refreshReminders(ep);
@@ -198,7 +307,7 @@ export function usePushReminders() {
     })();
   }, [supported, registerSW, refreshReminders]);
 
-  // Poll reminders every 30s to reflect server-side auto-expiry
+  // Poll reminders every 30s to reflect server-side auto-expiry / diagnostics.
   useEffect(() => {
     if (!endpoint) return;
     const i = setInterval(() => {
@@ -215,11 +324,13 @@ export function usePushReminders() {
       const res = await fetchJSON<{
         reminder: Reminder;
         reminders: Reminder[];
+        diagnostics?: PushDiagnostics;
       }>(apiUrl("/api/push/reminders"), {
         method: "POST",
         body: JSON.stringify({ endpoint: ep, reminder: r }),
       });
       setReminders(res.reminders);
+      setDiagnostics(res.diagnostics ?? {});
       return res.reminder;
     },
     [endpoint, subscribe],
@@ -228,33 +339,55 @@ export function usePushReminders() {
   const removeReminder = useCallback(
     async (id: string) => {
       if (!endpoint) return;
-      const res = await fetchJSON<{ reminders: Reminder[] }>(
+      const res = await fetchJSON<{
+        reminders: Reminder[];
+        diagnostics?: PushDiagnostics;
+      }>(
         apiUrl(
           `/api/push/reminders/${encodeURIComponent(id)}?endpoint=${encodeURIComponent(endpoint)}`,
         ),
         { method: "DELETE" },
       );
       setReminders(res.reminders);
+      setDiagnostics(res.diagnostics ?? {});
     },
     [endpoint],
   );
 
   const clearAll = useCallback(async () => {
     if (!endpoint) return;
-    await fetchJSON(
+    const res = await fetchJSON<{ diagnostics?: PushDiagnostics }>(
       apiUrl(`/api/push/reminders?endpoint=${encodeURIComponent(endpoint)}`),
       {
         method: "DELETE",
       },
     );
     setReminders([]);
+    setDiagnostics(res.diagnostics ?? {});
   }, [endpoint]);
+
+  const sendTestNotification = useCallback(async () => {
+    let ep = endpoint;
+    if (!ep) ep = await subscribe();
+    if (!ep) throw new Error("Notifications not enabled");
+    const res = await fetchJSON<{ ok: boolean; diagnostics?: PushDiagnostics }>(
+      apiUrl("/api/push/test"),
+      {
+        method: "POST",
+        body: JSON.stringify({ endpoint: ep }),
+      },
+    );
+    setDiagnostics(res.diagnostics ?? {});
+    return res.ok;
+  }, [endpoint, subscribe]);
 
   return {
     reminders,
+    diagnostics,
     addReminder,
     removeReminder,
     clearAll,
+    sendTestNotification,
     permission,
     supported,
     busy,

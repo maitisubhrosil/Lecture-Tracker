@@ -6,6 +6,7 @@
  *   GET  /api/schedule                       proxied + cached from Google Sheets
  *   GET  /api/push/vapid-public-key
  *   GET  /api/push/stats                    { activeSubscribers }
+ *   POST /api/push/test                     { endpoint }
  *   POST /api/push/subscribe                 { subscription }
  *   POST /api/push/unsubscribe               { endpoint }
  *   GET  /api/push/reminders?endpoint=...
@@ -62,11 +63,21 @@ interface Reminder {
   preClassNudge: boolean;
   createdAt: string;
 }
+interface PushDiagnostics {
+  lastAttemptAt?: string;
+  lastAttemptType?: string;
+  lastAttemptStatus?: number;
+  lastSuccessAt?: string;
+  lastFailureAt?: string;
+  lastFailureReason?: string;
+  lastMatchedReminderAt?: string;
+}
 interface SubscriberRecord {
   subscription: PushSubscriptionJSON;
   reminders: Reminder[];
   sent: Record<string, true>;
   updatedAt: string;
+  diagnostics?: PushDiagnostics;
 }
 
 // ---------- KV keys ----------
@@ -74,6 +85,7 @@ const SUB_INDEX_KEY = "subs:index"; // string[] of endpoints
 const subKey = (endpoint: string) => `sub:${endpoint}`;
 const SCHEDULE_CACHE_KEY = "schedule:cache";
 const SCHEDULE_DATE_KEY = "schedule:date";
+const CRON_TOLERANCE_MINUTES = 5;
 
 // ---------- Utilities ----------
 const CORS_HEADERS: HeadersInit = {
@@ -443,11 +455,51 @@ async function loadKeys(env: Env): Promise<ApplicationServerKeys> {
 }
 
 // ---------- Push send ----------
+interface PushResult {
+  ok: boolean;
+  purged?: boolean;
+  status?: number;
+  reason?: string;
+}
+
+function recordPushAttempt(rec: SubscriberRecord, type: string) {
+  rec.diagnostics = {
+    ...(rec.diagnostics ?? {}),
+    lastAttemptAt: new Date().toISOString(),
+    lastAttemptType: type,
+    lastFailureReason: undefined,
+  };
+}
+
+function recordPushSuccess(rec: SubscriberRecord, status: number) {
+  rec.diagnostics = {
+    ...(rec.diagnostics ?? {}),
+    lastAttemptStatus: status,
+    lastSuccessAt: new Date().toISOString(),
+    lastFailureReason: undefined,
+  };
+}
+
+function recordPushFailure(
+  rec: SubscriberRecord,
+  status: number | undefined,
+  reason: string,
+) {
+  rec.diagnostics = {
+    ...(rec.diagnostics ?? {}),
+    lastAttemptStatus: status,
+    lastFailureAt: new Date().toISOString(),
+    lastFailureReason: reason,
+  };
+}
+
 async function sendPush(
   env: Env,
   rec: SubscriberRecord,
   payload: object,
-): Promise<boolean> {
+  type = "reminder",
+): Promise<PushResult> {
+  recordPushAttempt(rec, type);
   try {
     const keys = await loadKeys(env);
     const { headers, body, endpoint } = await generatePushHTTPRequest({
@@ -474,17 +526,28 @@ async function sendPush(
       body: pushBody,
     });
     if (res.status === 404 || res.status === 410) {
+      recordPushFailure(rec, res.status, "Subscription expired or was revoked");
       await deleteSubscriber(env, rec.subscription.endpoint);
-      return false;
+      return {
+        ok: false,
+        purged: true,
+        status: res.status,
+        reason: "subscription expired",
+      };
     }
     if (!res.ok) {
-      console.warn("push non-OK", res.status, await res.text().catch(() => ""));
-      return false;
+      const reason = await res.text().catch(() => "");
+      recordPushFailure(rec, res.status, reason || `push HTTP ${res.status}`);
+      console.warn("push non-OK", res.status, reason);
+      return { ok: false, status: res.status, reason };
     }
-    return true;
+    recordPushSuccess(rec, res.status);
+    return { ok: true, status: res.status };
   } catch (e) {
-    console.warn("push error", (e as Error).message);
-    return false;
+    const reason = (e as Error).message;
+    recordPushFailure(rec, undefined, reason);
+    console.warn("push error", reason);
+    return { ok: false, reason };
   }
 }
 
@@ -544,13 +607,13 @@ async function evaluateAll(env: Env) {
       );
       if (matched.length === 0) continue;
 
-      // Fixed slot reminders (fire within 1-min window since cron is 1 min)
+      // Fixed slot reminders (5-minute tolerance handles delayed cron runs; sent keys prevent duplicates)
       for (const slot of r.times) {
         const [hStr, mStr] = slot.split(":");
         if (!hStr || !mStr) continue;
         const slotMins = parseInt(hStr) * 60 + parseInt(mStr);
         const diff = currentMins - slotMins;
-        if (diff < 0 || diff > 1) continue;
+        if (diff < 0 || diff > CRON_TOLERANCE_MINUTES) continue;
         const key = `${r.id}|${todayISO}|${slot}`;
         if (rec.sent[key]) continue;
         const ok = await sendPush(env, rec, {
@@ -560,10 +623,14 @@ async function evaluateAll(env: Env) {
             .join("\n"),
           tag: key,
         });
-        if (ok) {
+        rec.diagnostics = {
+          ...(rec.diagnostics ?? {}),
+          lastMatchedReminderAt: new Date().toISOString(),
+        };
+        mutated = true;
+        if (ok.ok) {
           rec.sent[key] = true;
-          mutated = true;
-        } else if (!(await getSubscriber(env, endpoint))) {
+        } else if (ok.purged || !(await getSubscriber(env, endpoint))) {
           // Subscriber was just purged by 410 handler; bail
           mutated = false;
           break;
@@ -577,7 +644,7 @@ async function evaluateAll(env: Env) {
           if (startMins === null) continue;
           const target = startMins - 15;
           const diff = currentMins - target;
-          if (diff < 0 || diff > 1) continue;
+          if (diff < 0 || diff > CRON_TOLERANCE_MINUTES) continue;
           const key = `preclass|${r.id}|${todayISO}|${sess.slot}|${sess.subject}`;
           if (rec.sent[key]) continue;
           const ok = await sendPush(env, rec, {
@@ -585,9 +652,16 @@ async function evaluateAll(env: Env) {
             body: `Slot S${sess.slot} · ${sess.time}`,
             tag: key,
           });
-          if (ok) {
+          rec.diagnostics = {
+            ...(rec.diagnostics ?? {}),
+            lastMatchedReminderAt: new Date().toISOString(),
+          };
+          mutated = true;
+          if (ok.ok) {
             rec.sent[key] = true;
-            mutated = true;
+          } else if (ok.purged || !(await getSubscriber(env, endpoint))) {
+            mutated = false;
+            break;
           }
         }
       }
@@ -644,6 +718,7 @@ async function handle(
       ok: true,
       endpoint: s.endpoint,
       reminderCount: rec.reminders.length,
+      diagnostics: rec.diagnostics ?? {},
     });
   }
 
@@ -660,7 +735,37 @@ async function handle(
     const endpoint = url.searchParams.get("endpoint") ?? "";
     if (!endpoint) return errResp("endpoint required");
     const rec = await getSubscriber(env, endpoint);
-    return json({ reminders: rec?.reminders ?? [] });
+    return json({
+      reminders: rec?.reminders ?? [],
+      diagnostics: rec?.diagnostics ?? {},
+    });
+  }
+
+  if (p === "/api/push/test" && method === "POST") {
+    const body = await request
+      .json<{ endpoint?: string }>()
+      .catch(() => ({}) as { endpoint?: string });
+    if (!body.endpoint) return errResp("endpoint required");
+    const rec = await getSubscriber(env, body.endpoint);
+    if (!rec) return errResp("subscription not found", 404);
+    const result = await sendPush(
+      env,
+      rec,
+      {
+        title: "✅ ePGP test notification",
+        body: "If you can see this, reminders can reach this browser.",
+        tag: `test|${Date.now()}`,
+      },
+      "test",
+    );
+    if (!result.purged && (await getSubscriber(env, body.endpoint))) {
+      rec.updatedAt = new Date().toISOString();
+      await putSubscriber(env, rec);
+    }
+    return json(
+      { ok: result.ok, result, diagnostics: rec.diagnostics ?? {} },
+      result.ok ? 200 : 502,
+    );
   }
 
   if (p === "/api/push/reminders" && method === "POST") {
@@ -692,7 +797,12 @@ async function handle(
     rec.reminders.push(reminder);
     rec.updatedAt = new Date().toISOString();
     await putSubscriber(env, rec);
-    return json({ ok: true, reminder, reminders: rec.reminders });
+    return json({
+      ok: true,
+      reminder,
+      reminders: rec.reminders,
+      diagnostics: rec.diagnostics ?? {},
+    });
   }
 
   // DELETE /api/push/reminders/:id?endpoint=...
@@ -702,11 +812,15 @@ async function handle(
     const endpoint = url.searchParams.get("endpoint") ?? "";
     if (!endpoint) return errResp("endpoint required");
     const rec = await getSubscriber(env, endpoint);
-    if (!rec) return json({ ok: true, reminders: [] });
+    if (!rec) return json({ ok: true, reminders: [], diagnostics: {} });
     rec.reminders = rec.reminders.filter((r) => r.id !== id);
     rec.updatedAt = new Date().toISOString();
     await putSubscriber(env, rec);
-    return json({ ok: true, reminders: rec.reminders });
+    return json({
+      ok: true,
+      reminders: rec.reminders,
+      diagnostics: rec.diagnostics ?? {},
+    });
   }
 
   // DELETE /api/push/reminders?endpoint=...  (clear all)
@@ -720,7 +834,11 @@ async function handle(
       rec.updatedAt = new Date().toISOString();
       await putSubscriber(env, rec);
     }
-    return json({ ok: true, reminders: [] });
+    return json({
+      ok: true,
+      reminders: [],
+      diagnostics: rec?.diagnostics ?? {},
+    });
   }
 
   // Manual cron trigger (debug, requires header)
