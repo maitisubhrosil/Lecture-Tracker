@@ -5,6 +5,8 @@
  *   GET  /api/healthz
  *   GET  /api/schedule                       proxied + cached from Google Sheets
  *   GET  /api/push/vapid-public-key
+ *   GET  /api/push/stats                    { activeSubscribers }
+ *   POST /api/push/test                     { endpoint }
  *   POST /api/push/subscribe                 { subscription }
  *   POST /api/push/unsubscribe               { endpoint }
  *   GET  /api/push/reminders?endpoint=...
@@ -19,7 +21,10 @@
  *   matching lecture date.
  */
 
-import { ApplicationServerKeys, generatePushHTTPRequest } from "webpush-webcrypto";
+import {
+  ApplicationServerKeys,
+  generatePushHTTPRequest,
+} from "webpush-webcrypto";
 
 export interface Env {
   EPGP_KV: KVNamespace;
@@ -27,11 +32,21 @@ export interface Env {
   VAPID_PRIVATE_KEY: string;
   VAPID_SUBJECT: string;
   SHEET_CSV_URL: string;
+  APP_TIME_ZONE?: string;
 }
 
 // ---------- Types ----------
-interface Session { slot: number; time: string; subject: string }
-interface DaySchedule { date: string; day: string; week: string; sessions: Session[] }
+interface Session {
+  slot: number;
+  time: string;
+  subject: string;
+}
+interface DaySchedule {
+  date: string;
+  day: string;
+  week: string;
+  sessions: Session[];
+}
 interface ScheduleData {
   subjects: string[];
   schedule: DaySchedule[];
@@ -48,18 +63,29 @@ interface Reminder {
   preClassNudge: boolean;
   createdAt: string;
 }
+interface PushDiagnostics {
+  lastAttemptAt?: string;
+  lastAttemptType?: string;
+  lastAttemptStatus?: number;
+  lastSuccessAt?: string;
+  lastFailureAt?: string;
+  lastFailureReason?: string;
+  lastMatchedReminderAt?: string;
+}
 interface SubscriberRecord {
   subscription: PushSubscriptionJSON;
   reminders: Reminder[];
   sent: Record<string, true>;
   updatedAt: string;
+  diagnostics?: PushDiagnostics;
 }
 
 // ---------- KV keys ----------
-const SUB_INDEX_KEY = "subs:index";  // string[] of endpoints
+const SUB_INDEX_KEY = "subs:index"; // string[] of endpoints
 const subKey = (endpoint: string) => `sub:${endpoint}`;
 const SCHEDULE_CACHE_KEY = "schedule:cache";
 const SCHEDULE_DATE_KEY = "schedule:date";
+const CRON_TOLERANCE_MINUTES = 5;
 
 // ---------- Utilities ----------
 const CORS_HEADERS: HeadersInit = {
@@ -79,25 +105,76 @@ function errResp(message: string, status = 400) {
   return json({ error: message }, status);
 }
 
-function todayLocalISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const DEFAULT_TIME_ZONE = "Asia/Kolkata";
+const MONTHS: Record<string, string> = {
+  jan: "01",
+  january: "01",
+  feb: "02",
+  february: "02",
+  mar: "03",
+  march: "03",
+  apr: "04",
+  april: "04",
+  may: "05",
+  jun: "06",
+  june: "06",
+  jul: "07",
+  july: "07",
+  aug: "08",
+  august: "08",
+  sep: "09",
+  sept: "09",
+  september: "09",
+  oct: "10",
+  october: "10",
+  nov: "11",
+  november: "11",
+  dec: "12",
+  december: "12",
+};
+
+function appTimeZone(env: Env): string {
+  return env.APP_TIME_ZONE || DEFAULT_TIME_ZONE;
 }
 
-function parseScheduleDateStr(dateStr: string): Date | null {
+function todayUTCISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function zonedParts(
+  date: Date,
+  timeZone: string,
+): { isoDate: string; minutes: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type: string) =>
+    parts.find((part) => part.type === type)?.value ?? "00";
+  const hour = Number(get("hour"));
+  const minute = Number(get("minute"));
+  return {
+    isoDate: `${get("year")}-${get("month")}-${get("day")}`,
+    minutes: hour * 60 + minute,
+  };
+}
+
+function scheduleDateToISO(dateStr: string): string | null {
   const parts = dateStr.split("-");
   if (parts.length !== 3) return null;
-  const [day, month, yearShort] = parts;
-  const d = new Date(`${day} ${month} 20${yearShort}`);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+  const [dayRaw, monthRaw, yearRaw] = parts;
+  const month = MONTHS[monthRaw!.trim().toLowerCase()];
+  if (!month) return null;
+  const day = Number(dayRaw);
+  const yearShort = Number(yearRaw);
+  if (!Number.isInteger(day) || !Number.isInteger(yearShort)) return null;
+  const year = yearShort < 100 ? 2000 + yearShort : yearShort;
+  return `${year}-${month}-${String(day).padStart(2, "0")}`;
 }
 
 function parseStartMinutes(timeRange: string): number | null {
@@ -120,8 +197,10 @@ function parseCSV(text: string): string[][] {
     let inQuotes = false;
     for (const char of line) {
       if (char === '"') inQuotes = !inQuotes;
-      else if (char === "," && !inQuotes) { cells.push(current.trim()); current = ""; }
-      else current += char;
+      else if (char === "," && !inQuotes) {
+        cells.push(current.trim());
+        current = "";
+      } else current += char;
     }
     cells.push(current.trim());
     rows.push(cells);
@@ -144,13 +223,25 @@ function parseSchedule(csvText: string): ScheduleData {
       rows[5][8] || "05:30 PM-07:00 PM",
     ];
   } else {
-    campusTimes = ["09:00 AM-10:30 AM","11:15 AM-12:45 PM","02:00 PM-03:30 PM","03:45 PM-05:15 PM","05:30 PM-07:00 PM"];
+    campusTimes = [
+      "09:00 AM-10:30 AM",
+      "11:15 AM-12:45 PM",
+      "02:00 PM-03:30 PM",
+      "03:45 PM-05:15 PM",
+      "05:30 PM-07:00 PM",
+    ];
   }
 
   for (const row of rows) {
     const label = (row[2] || "").toLowerCase();
     if (label.includes("mon-friday") || label.includes("weekday")) {
-      weekdayTimes = ["","","", row[7] || "07:30 PM-09:00 PM", row[8] || "09:15 PM-10:45 PM"];
+      weekdayTimes = [
+        "",
+        "",
+        "",
+        row[7] || "07:30 PM-09:00 PM",
+        row[8] || "09:15 PM-10:45 PM",
+      ];
     }
     if (label.includes("sat-sun") || label.includes("weekend")) {
       weekendTimes = [
@@ -162,10 +253,24 @@ function parseSchedule(csvText: string): ScheduleData {
       ];
     }
   }
-  if (weekdayTimes.length === 0) weekdayTimes = ["","","", "07:30 PM-09:00 PM", "09:15 PM-10:45 PM"];
-  if (weekendTimes.length === 0) weekendTimes = ["10:00 AM-11:30 AM","11:45 AM-01:15 PM","03:00 PM-04:30 PM","04:45 PM-06:15 PM","06:30 PM-08:00 PM"];
+  if (weekdayTimes.length === 0)
+    weekdayTimes = ["", "", "", "07:30 PM-09:00 PM", "09:15 PM-10:45 PM"];
+  if (weekendTimes.length === 0)
+    weekendTimes = [
+      "10:00 AM-11:30 AM",
+      "11:45 AM-01:15 PM",
+      "03:00 PM-04:30 PM",
+      "04:45 PM-06:15 PM",
+      "06:30 PM-08:00 PM",
+    ];
 
-  const EXCLUDED = new Set(["Buffer slot", "Conclusion of In-Campus II", "Id ul Zuha", "Muharram", "Work Shop (CR203)"]);
+  const EXCLUDED = new Set([
+    "Buffer slot",
+    "Conclusion of In-Campus II",
+    "Id ul Zuha",
+    "Muharram",
+    "Work Shop (CR203)",
+  ]);
 
   const schedule: DaySchedule[] = [];
   const subjectsSet = new Set<string>();
@@ -173,12 +278,17 @@ function parseSchedule(csvText: string): ScheduleData {
   for (const row of rows) {
     const dateStr = row[1];
     if (!dateStr || !/\d{2}-[A-Za-z]+-\d{2}/.test(dateStr)) continue;
-    const weekCol = row[0]; const dayCol = row[2];
+    const weekCol = row[0];
+    const dayCol = row[2];
     if (weekCol && weekCol.startsWith("Week")) currentWeek = weekCol;
     if (!dayCol || dayCol === "Day") continue;
     const isWeekend = dayCol === "Saturday" || dayCol === "Sunday";
     const hasCampusSessions = !!(row[4] || row[5] || row[6]);
-    const times = isWeekend ? weekendTimes : (hasCampusSessions ? campusTimes : weekdayTimes);
+    const times = isWeekend
+      ? weekendTimes
+      : hasCampusSessions
+        ? campusTimes
+        : weekdayTimes;
     const sessions: Session[] = [];
     for (let i = 0; i < 5; i++) {
       const subject = (row[4 + i] || "").trim();
@@ -188,17 +298,30 @@ function parseSchedule(csvText: string): ScheduleData {
         sessions.push({ slot: i + 1, time, subject });
       }
     }
-    if (sessions.length > 0) schedule.push({ date: dateStr, day: dayCol, week: currentWeek, sessions });
+    if (sessions.length > 0)
+      schedule.push({
+        date: dateStr,
+        day: dayCol,
+        week: currentWeek,
+        sessions,
+      });
   }
-  return { subjects: [...subjectsSet].sort(), schedule, lastFetched: new Date().toISOString() };
+  return {
+    subjects: [...subjectsSet].sort(),
+    schedule,
+    lastFetched: new Date().toISOString(),
+  };
 }
 
 async function getSchedule(env: Env, force = false): Promise<ScheduleData> {
-  const today = todayLocalISO();
+  const today = todayUTCISO();
   if (!force) {
     const date = await env.EPGP_KV.get(SCHEDULE_DATE_KEY);
     if (date === today) {
-      const cached = await env.EPGP_KV.get<ScheduleData>(SCHEDULE_CACHE_KEY, "json");
+      const cached = await env.EPGP_KV.get<ScheduleData>(
+        SCHEDULE_CACHE_KEY,
+        "json",
+      );
       if (cached) return cached;
     }
   }
@@ -217,7 +340,10 @@ async function getIndex(env: Env): Promise<string[]> {
 async function saveIndex(env: Env, idx: string[]) {
   await env.EPGP_KV.put(SUB_INDEX_KEY, JSON.stringify(idx));
 }
-async function getSubscriber(env: Env, endpoint: string): Promise<SubscriberRecord | null> {
+async function getSubscriber(
+  env: Env,
+  endpoint: string,
+): Promise<SubscriberRecord | null> {
   return env.EPGP_KV.get<SubscriberRecord>(subKey(endpoint), "json");
 }
 async function putSubscriber(env: Env, rec: SubscriberRecord) {
@@ -226,15 +352,50 @@ async function putSubscriber(env: Env, rec: SubscriberRecord) {
 async function deleteSubscriber(env: Env, endpoint: string) {
   await env.EPGP_KV.delete(subKey(endpoint));
   const idx = await getIndex(env);
-  const next = idx.filter(e => e !== endpoint);
+  const next = idx.filter((e) => e !== endpoint);
   if (next.length !== idx.length) await saveIndex(env, next);
 }
-async function upsertSubscription(env: Env, sub: PushSubscriptionJSON): Promise<SubscriberRecord> {
+async function getSubscriberStats(
+  env: Env,
+): Promise<{ activeSubscribers: number }> {
+  const idx = await getIndex(env);
+  const unique = Array.from(new Set(idx));
+  let activeSubscribers = 0;
+  const validEndpoints: string[] = [];
+
+  for (const endpoint of unique) {
+    const rec = await getSubscriber(env, endpoint);
+    if (!rec?.subscription?.endpoint) continue;
+    activeSubscribers += 1;
+    validEndpoints.push(endpoint);
+  }
+
+  if (
+    validEndpoints.length !== idx.length ||
+    validEndpoints.some((endpoint, index) => endpoint !== idx[index])
+  ) {
+    await saveIndex(env, validEndpoints);
+  }
+
+  return { activeSubscribers };
+}
+async function upsertSubscription(
+  env: Env,
+  sub: PushSubscriptionJSON,
+): Promise<SubscriberRecord> {
   let rec = await getSubscriber(env, sub.endpoint);
   if (!rec) {
-    rec = { subscription: sub, reminders: [], sent: {}, updatedAt: new Date().toISOString() };
+    rec = {
+      subscription: sub,
+      reminders: [],
+      sent: {},
+      updatedAt: new Date().toISOString(),
+    };
     const idx = await getIndex(env);
-    if (!idx.includes(sub.endpoint)) { idx.push(sub.endpoint); await saveIndex(env, idx); }
+    if (!idx.includes(sub.endpoint)) {
+      idx.push(sub.endpoint);
+      await saveIndex(env, idx);
+    }
   } else {
     rec.subscription = sub;
     rec.updatedAt = new Date().toISOString();
@@ -249,7 +410,9 @@ async function upsertSubscription(env: Env, sub: PushSubscriptionJSON): Promise<
 //   privateKey: 32-byte raw scalar
 // We convert them to CryptoKeys via JWK so we can construct ApplicationServerKeys directly.
 function b64urlToUint8(s: string): Uint8Array {
-  const padded = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4);
+  const padded =
+    s.replace(/-/g, "+").replace(/_/g, "/") +
+    "=".repeat((4 - (s.length % 4)) % 4);
   const bin = atob(padded);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -266,7 +429,8 @@ async function loadKeys(env: Env): Promise<ApplicationServerKeys> {
   if (cachedKeys) return cachedKeys;
   const pub = b64urlToUint8(env.VAPID_PUBLIC_KEY);
   const priv = b64urlToUint8(env.VAPID_PRIVATE_KEY);
-  if (pub.length !== 65 || pub[0] !== 0x04) throw new Error("Invalid VAPID public key");
+  if (pub.length !== 65 || pub[0] !== 0x04)
+    throw new Error("Invalid VAPID public key");
   if (priv.length !== 32) throw new Error("Invalid VAPID private key");
   const x = uint8ToB64url(pub.slice(1, 33));
   const y = uint8ToB64url(pub.slice(33, 65));
@@ -291,7 +455,51 @@ async function loadKeys(env: Env): Promise<ApplicationServerKeys> {
 }
 
 // ---------- Push send ----------
-async function sendPush(env: Env, rec: SubscriberRecord, payload: object): Promise<boolean> {
+interface PushResult {
+  ok: boolean;
+  purged?: boolean;
+  status?: number;
+  reason?: string;
+}
+
+function recordPushAttempt(rec: SubscriberRecord, type: string) {
+  rec.diagnostics = {
+    ...(rec.diagnostics ?? {}),
+    lastAttemptAt: new Date().toISOString(),
+    lastAttemptType: type,
+    lastFailureReason: undefined,
+  };
+}
+
+function recordPushSuccess(rec: SubscriberRecord, status: number) {
+  rec.diagnostics = {
+    ...(rec.diagnostics ?? {}),
+    lastAttemptStatus: status,
+    lastSuccessAt: new Date().toISOString(),
+    lastFailureReason: undefined,
+  };
+}
+
+function recordPushFailure(
+  rec: SubscriberRecord,
+  status: number | undefined,
+  reason: string,
+) {
+  rec.diagnostics = {
+    ...(rec.diagnostics ?? {}),
+    lastAttemptStatus: status,
+    lastFailureAt: new Date().toISOString(),
+    lastFailureReason: reason,
+  };
+}
+
+async function sendPush(
+  env: Env,
+  rec: SubscriberRecord,
+  payload: object,
+  type = "reminder",
+): Promise<PushResult> {
+  recordPushAttempt(rec, type);
   try {
     const keys = await loadKeys(env);
     const { headers, body, endpoint } = await generatePushHTTPRequest({
@@ -299,43 +507,66 @@ async function sendPush(env: Env, rec: SubscriberRecord, payload: object): Promi
       payload: JSON.stringify(payload),
       target: {
         endpoint: rec.subscription.endpoint,
-        keys: { p256dh: rec.subscription.keys.p256dh, auth: rec.subscription.keys.auth },
+        keys: {
+          p256dh: rec.subscription.keys.p256dh,
+          auth: rec.subscription.keys.auth,
+        },
       },
       adminContact: env.VAPID_SUBJECT,
       ttl: 60,
       urgency: "normal",
     });
-    const res = await fetch(endpoint, { method: "POST", headers, body: body.buffer as ArrayBuffer });
+    const pushBody = body.buffer.slice(
+      body.byteOffset,
+      body.byteOffset + body.byteLength,
+    ) as ArrayBuffer;
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: pushBody,
+    });
     if (res.status === 404 || res.status === 410) {
+      recordPushFailure(rec, res.status, "Subscription expired or was revoked");
       await deleteSubscriber(env, rec.subscription.endpoint);
-      return false;
+      return {
+        ok: false,
+        purged: true,
+        status: res.status,
+        reason: "subscription expired",
+      };
     }
     if (!res.ok) {
-      console.warn("push non-OK", res.status, await res.text().catch(() => ""));
-      return false;
+      const reason = await res.text().catch(() => "");
+      recordPushFailure(rec, res.status, reason || `push HTTP ${res.status}`);
+      console.warn("push non-OK", res.status, reason);
+      return { ok: false, status: res.status, reason };
     }
-    return true;
+    recordPushSuccess(rec, res.status);
+    return { ok: true, status: res.status };
   } catch (e) {
-    console.warn("push error", (e as Error).message);
-    return false;
+    const reason = (e as Error).message;
+    recordPushFailure(rec, undefined, reason);
+    console.warn("push error", reason);
+    return { ok: false, reason };
   }
 }
 
 // ---------- Cron evaluator ----------
 async function evaluateAll(env: Env) {
   const data = await getSchedule(env).catch(() => null);
-  if (!data) { console.warn("no schedule available"); return; }
+  if (!data) {
+    console.warn("no schedule available");
+    return;
+  }
 
   const now = new Date();
-  const currentMins = now.getHours() * 60 + now.getMinutes();
-  const todayISO = todayLocalISO();
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const timeZone = appTimeZone(env);
+  const { isoDate: todayISO, minutes: currentMins } = zonedParts(now, timeZone);
 
-  // Find today's schedule entry once
-  const todaySched = data.schedule.find(d => {
-    const x = parseScheduleDateStr(d.date);
-    return x !== null && isSameDay(x, now);
-  });
+  // Find today's schedule entry once in the same time zone users see in the app.
+  const todaySched = data.schedule.find(
+    (d) => scheduleDateToISO(d.date) === todayISO,
+  );
 
   for (const endpoint of await getIndex(env)) {
     const rec = await getSubscriber(env, endpoint);
@@ -346,16 +577,21 @@ async function evaluateAll(env: Env) {
     // Auto-expire reminders whose subjects' last occurrence has passed
     const survivors: Reminder[] = [];
     for (const r of rec.reminders) {
-      let last: Date | null = null;
+      let last: string | null = null;
       for (const day of data.schedule) {
-        if (!day.sessions.some(s => r.subjects.includes(s.subject))) continue;
-        const d = parseScheduleDateStr(day.date);
+        if (!day.sessions.some((s) => r.subjects.includes(s.subject))) continue;
+        const d = scheduleDateToISO(day.date);
         if (!d) continue;
         if (!last || d > last) last = d;
       }
-      if (!last) { mutated = true; continue; }
-      const lastDay = new Date(last); lastDay.setHours(0,0,0,0);
-      if (today > lastDay) { mutated = true; continue; }
+      if (!last) {
+        mutated = true;
+        continue;
+      }
+      if (todayISO > last) {
+        mutated = true;
+        continue;
+      }
       survivors.push(r);
     }
     if (mutated) rec.reminders = survivors;
@@ -366,25 +602,35 @@ async function evaluateAll(env: Env) {
     }
 
     for (const r of rec.reminders) {
-      const matched = todaySched.sessions.filter(s => r.subjects.includes(s.subject));
+      const matched = todaySched.sessions.filter((s) =>
+        r.subjects.includes(s.subject),
+      );
       if (matched.length === 0) continue;
 
-      // Fixed slot reminders (fire within 1-min window since cron is 1 min)
+      // Fixed slot reminders (5-minute tolerance handles delayed cron runs; sent keys prevent duplicates)
       for (const slot of r.times) {
         const [hStr, mStr] = slot.split(":");
         if (!hStr || !mStr) continue;
         const slotMins = parseInt(hStr) * 60 + parseInt(mStr);
         const diff = currentMins - slotMins;
-        if (diff < 0 || diff > 1) continue;
+        if (diff < 0 || diff > CRON_TOLERANCE_MINUTES) continue;
         const key = `${r.id}|${todayISO}|${slot}`;
         if (rec.sent[key]) continue;
         const ok = await sendPush(env, rec, {
           title: `📚 Reminder: ${r.subjects.join(", ")}`,
-          body: matched.map(s => `S${s.slot} · ${s.time} · ${s.subject}`).join("\n"),
+          body: matched
+            .map((s) => `S${s.slot} · ${s.time} · ${s.subject}`)
+            .join("\n"),
           tag: key,
         });
-        if (ok) { rec.sent[key] = true; mutated = true; }
-        else if (!(await getSubscriber(env, endpoint))) {
+        rec.diagnostics = {
+          ...(rec.diagnostics ?? {}),
+          lastMatchedReminderAt: new Date().toISOString(),
+        };
+        mutated = true;
+        if (ok.ok) {
+          rec.sent[key] = true;
+        } else if (ok.purged || !(await getSubscriber(env, endpoint))) {
           // Subscriber was just purged by 410 handler; bail
           mutated = false;
           break;
@@ -398,7 +644,7 @@ async function evaluateAll(env: Env) {
           if (startMins === null) continue;
           const target = startMins - 15;
           const diff = currentMins - target;
-          if (diff < 0 || diff > 1) continue;
+          if (diff < 0 || diff > CRON_TOLERANCE_MINUTES) continue;
           const key = `preclass|${r.id}|${todayISO}|${sess.slot}|${sess.subject}`;
           if (rec.sent[key]) continue;
           const ok = await sendPush(env, rec, {
@@ -406,7 +652,17 @@ async function evaluateAll(env: Env) {
             body: `Slot S${sess.slot} · ${sess.time}`,
             tag: key,
           });
-          if (ok) { rec.sent[key] = true; mutated = true; }
+          rec.diagnostics = {
+            ...(rec.diagnostics ?? {}),
+            lastMatchedReminderAt: new Date().toISOString(),
+          };
+          mutated = true;
+          if (ok.ok) {
+            rec.sent[key] = true;
+          } else if (ok.purged || !(await getSubscriber(env, endpoint))) {
+            mutated = false;
+            break;
+          }
         }
       }
     }
@@ -420,17 +676,24 @@ async function evaluateAll(env: Env) {
 }
 
 // ---------- HTTP router ----------
-async function handle(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+async function handle(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<Response> {
   const url = new URL(request.url);
   const p = url.pathname;
   const method = request.method;
 
-  if (method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
+  if (method === "OPTIONS")
+    return new Response(null, { headers: CORS_HEADERS });
 
   if (p === "/api/healthz") return json({ status: "ok" });
 
   if (p === "/api/schedule" && method === "GET") {
-    const data = await getSchedule(env).catch(e => ({ error: (e as Error).message }));
+    const data = await getSchedule(env).catch((e) => ({
+      error: (e as Error).message,
+    }));
     if ("error" in data) return errResp(data.error, 500);
     return json(data);
   }
@@ -439,16 +702,30 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
     return json({ publicKey: env.VAPID_PUBLIC_KEY });
   }
 
+  if (p === "/api/push/stats" && method === "GET") {
+    return json(await getSubscriberStats(env));
+  }
+
   if (p === "/api/push/subscribe" && method === "POST") {
-    const body = await request.json<{ subscription?: PushSubscriptionJSON }>().catch(() => ({} as { subscription?: PushSubscriptionJSON }));
+    const body = await request
+      .json<{ subscription?: PushSubscriptionJSON }>()
+      .catch(() => ({}) as { subscription?: PushSubscriptionJSON });
     const s = body.subscription;
-    if (!s?.endpoint || !s?.keys?.p256dh || !s?.keys?.auth) return errResp("Invalid subscription");
+    if (!s?.endpoint || !s?.keys?.p256dh || !s?.keys?.auth)
+      return errResp("Invalid subscription");
     const rec = await upsertSubscription(env, s);
-    return json({ ok: true, endpoint: s.endpoint, reminderCount: rec.reminders.length });
+    return json({
+      ok: true,
+      endpoint: s.endpoint,
+      reminderCount: rec.reminders.length,
+      diagnostics: rec.diagnostics ?? {},
+    });
   }
 
   if (p === "/api/push/unsubscribe" && method === "POST") {
-    const body = await request.json<{ endpoint?: string }>().catch(() => ({} as { endpoint?: string }));
+    const body = await request
+      .json<{ endpoint?: string }>()
+      .catch(() => ({}) as { endpoint?: string });
     if (!body.endpoint) return errResp("endpoint required");
     await deleteSubscriber(env, body.endpoint);
     return json({ ok: true });
@@ -458,13 +735,56 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
     const endpoint = url.searchParams.get("endpoint") ?? "";
     if (!endpoint) return errResp("endpoint required");
     const rec = await getSubscriber(env, endpoint);
-    return json({ reminders: rec?.reminders ?? [] });
+    return json({
+      reminders: rec?.reminders ?? [],
+      diagnostics: rec?.diagnostics ?? {},
+    });
+  }
+
+  if (p === "/api/push/test" && method === "POST") {
+    const body = await request
+      .json<{ endpoint?: string }>()
+      .catch(() => ({}) as { endpoint?: string });
+    if (!body.endpoint) return errResp("endpoint required");
+    const rec = await getSubscriber(env, body.endpoint);
+    if (!rec) return errResp("subscription not found", 404);
+    const result = await sendPush(
+      env,
+      rec,
+      {
+        title: "✅ ePGP test notification",
+        body: "If you can see this, reminders can reach this browser.",
+        tag: `test|${Date.now()}`,
+      },
+      "test",
+    );
+    if (!result.purged && (await getSubscriber(env, body.endpoint))) {
+      rec.updatedAt = new Date().toISOString();
+      await putSubscriber(env, rec);
+    }
+    return json(
+      { ok: result.ok, result, diagnostics: rec.diagnostics ?? {} },
+      result.ok ? 200 : 502,
+    );
   }
 
   if (p === "/api/push/reminders" && method === "POST") {
-    const body = await request.json<{ endpoint?: string; reminder?: Omit<Reminder, "id" | "createdAt"> }>().catch(() => ({} as { endpoint?: string; reminder?: Omit<Reminder, "id" | "createdAt"> }));
-    if (!body.endpoint || !body.reminder) return errResp("endpoint and reminder required");
-    if (!body.reminder.subjects?.length || !body.reminder.times?.length) return errResp("subjects and times required");
+    const body = await request
+      .json<{
+        endpoint?: string;
+        reminder?: Omit<Reminder, "id" | "createdAt">;
+      }>()
+      .catch(
+        () =>
+          ({}) as {
+            endpoint?: string;
+            reminder?: Omit<Reminder, "id" | "createdAt">;
+          },
+      );
+    if (!body.endpoint || !body.reminder)
+      return errResp("endpoint and reminder required");
+    if (!body.reminder.subjects?.length || !body.reminder.times?.length)
+      return errResp("subjects and times required");
     const rec = await getSubscriber(env, body.endpoint);
     if (!rec) return errResp("subscription not found", 404);
     const reminder: Reminder = {
@@ -477,7 +797,12 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
     rec.reminders.push(reminder);
     rec.updatedAt = new Date().toISOString();
     await putSubscriber(env, rec);
-    return json({ ok: true, reminder, reminders: rec.reminders });
+    return json({
+      ok: true,
+      reminder,
+      reminders: rec.reminders,
+      diagnostics: rec.diagnostics ?? {},
+    });
   }
 
   // DELETE /api/push/reminders/:id?endpoint=...
@@ -487,11 +812,15 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
     const endpoint = url.searchParams.get("endpoint") ?? "";
     if (!endpoint) return errResp("endpoint required");
     const rec = await getSubscriber(env, endpoint);
-    if (!rec) return json({ ok: true, reminders: [] });
-    rec.reminders = rec.reminders.filter(r => r.id !== id);
+    if (!rec) return json({ ok: true, reminders: [], diagnostics: {} });
+    rec.reminders = rec.reminders.filter((r) => r.id !== id);
     rec.updatedAt = new Date().toISOString();
     await putSubscriber(env, rec);
-    return json({ ok: true, reminders: rec.reminders });
+    return json({
+      ok: true,
+      reminders: rec.reminders,
+      diagnostics: rec.diagnostics ?? {},
+    });
   }
 
   // DELETE /api/push/reminders?endpoint=...  (clear all)
@@ -505,7 +834,11 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext): Promis
       rec.updatedAt = new Date().toISOString();
       await putSubscriber(env, rec);
     }
-    return json({ ok: true, reminders: [] });
+    return json({
+      ok: true,
+      reminders: [],
+      diagnostics: rec?.diagnostics ?? {},
+    });
   }
 
   // Manual cron trigger (debug, requires header)

@@ -1,21 +1,274 @@
-import { useState, useRef } from "react";
-import { Bell, BellRing, BellOff, ChevronDown, ChevronUp, Trash2, Check, Sparkles, ChevronLeft, ChevronRight } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import {
+  AlertCircle,
+  Bell,
+  BellOff,
+  BellRing,
+  CalendarPlus,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Download,
+  Send,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { usePushReminders, TIME_SLOT_OPTIONS, formatSlotLabel } from "@/lib/usePushReminders";
+import {
+  formatSlotLabel,
+  getBrowserSupportInfo,
+  TIME_SLOT_OPTIONS,
+  usePushReminders,
+} from "@/lib/usePushReminders";
+import type { Reminder } from "@/lib/usePushReminders";
 import type { ScheduleData } from "@/lib/useScheduleData";
 
 interface Props {
   scheduleData: ScheduleData | undefined;
-  getSubjectColor: (subject: string, all: string[]) => { chip: string; card: string; text: string; border: string };
+  getSubjectColor: (
+    subject: string,
+    all: string[],
+  ) => { chip: string; card: string; text: string; border: string };
 }
 
-export default function RemindersSection({ scheduleData, getSubjectColor }: Props) {
+const CALENDAR_TIME_ZONE = "Asia/Kolkata";
+
+function parseScheduleDate(dateStr: string): Date | null {
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return null;
+  const [day, month, yearShort] = parts;
+  const d = new Date(`${day} ${month} 20${yearShort}`);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function parseClockMinutes(value: string): number | null {
+  const m = value.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+  if (!m) return null;
+  let hours = Number(m[1]);
+  const minutes = Number(m[2]);
+  const period = m[3]?.toUpperCase();
+  if (period === "PM" && hours !== 12) hours += 12;
+  if (period === "AM" && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+}
+
+function parseTimeRangeMinutes(
+  timeRange: string,
+): { start: number; end: number } | null {
+  const matches = timeRange.match(/\d+:\d+\s*(?:AM|PM)/gi);
+  if (!matches || matches.length < 2) return null;
+  const start = parseClockMinutes(matches[0]);
+  const end = parseClockMinutes(matches[matches.length - 1]);
+  return start === null || end === null ? null : { start, end };
+}
+
+function dateWithMinutes(day: Date, minutes: number): Date {
+  const d = new Date(day);
+  d.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return d;
+}
+
+function formatDateTime(value: Date): string {
+  return value.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function nextFireLabel(
+  reminder: Reminder,
+  scheduleData: ScheduleData | undefined,
+): string {
+  if (!scheduleData) return "Next reminder: waiting for schedule";
+  const now = new Date();
+  const candidates: Date[] = [];
+
+  for (const day of scheduleData.schedule) {
+    const date = parseScheduleDate(day.date);
+    if (!date) continue;
+    const hasSubject = day.sessions.some((s) =>
+      reminder.subjects.includes(s.subject),
+    );
+    if (!hasSubject) continue;
+
+    for (const slot of reminder.times) {
+      const mins = parseClockMinutes(slot);
+      if (mins === null) continue;
+      const fire = dateWithMinutes(date, mins);
+      if (fire >= now) candidates.push(fire);
+    }
+
+    if (reminder.preClassNudge) {
+      for (const session of day.sessions) {
+        if (!reminder.subjects.includes(session.subject)) continue;
+        const range = parseTimeRangeMinutes(session.time);
+        if (!range) continue;
+        const fire = dateWithMinutes(date, range.start - 15);
+        if (fire >= now) candidates.push(fire);
+      }
+    }
+  }
+
+  candidates.sort((a, b) => a.getTime() - b.getTime());
+  return candidates[0]
+    ? `Next: ${formatDateTime(candidates[0])}`
+    : "No upcoming matching schedule";
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function icsDate(date: Date, minutes: number): string {
+  const d = new Date(date);
+  d.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}T${pad2(d.getHours())}${pad2(d.getMinutes())}00`;
+}
+
+function escapeIcs(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function buildCalendarFile(
+  reminders: Reminder[],
+  scheduleData: ScheduleData | undefined,
+): string | null {
+  if (!scheduleData || reminders.length === 0) return null;
+  const now = new Date();
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Lecture Tracker//ePGP Reminders//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+  ];
+  const seen = new Set<string>();
+
+  const addEvent = (
+    uid: string,
+    start: string,
+    end: string,
+    summary: string,
+    description: string,
+    alarmMinutes?: number,
+  ) => {
+    if (seen.has(uid)) return;
+    seen.add(uid);
+    lines.push("BEGIN:VEVENT");
+    lines.push(`UID:${uid}@lecture-tracker`);
+    lines.push(
+      `DTSTAMP:${new Date()
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .replace(/\.\d{3}/, "")}`,
+    );
+    lines.push(`DTSTART;TZID=${CALENDAR_TIME_ZONE}:${start}`);
+    lines.push(`DTEND;TZID=${CALENDAR_TIME_ZONE}:${end}`);
+    lines.push(`SUMMARY:${escapeIcs(summary)}`);
+    lines.push(`DESCRIPTION:${escapeIcs(description)}`);
+    if (alarmMinutes) {
+      lines.push("BEGIN:VALARM");
+      lines.push("ACTION:DISPLAY");
+      lines.push(`DESCRIPTION:${escapeIcs(summary)}`);
+      lines.push(`TRIGGER:-PT${alarmMinutes}M`);
+      lines.push("END:VALARM");
+    }
+    lines.push("END:VEVENT");
+  };
+
+  for (const reminder of reminders) {
+    for (const day of scheduleData.schedule) {
+      const date = parseScheduleDate(day.date);
+      if (!date) continue;
+      const matchedSessions = day.sessions.filter((session) =>
+        reminder.subjects.includes(session.subject),
+      );
+      if (matchedSessions.length === 0) continue;
+
+      for (const slot of reminder.times) {
+        const mins = parseClockMinutes(slot);
+        if (mins === null) continue;
+        const startDate = dateWithMinutes(date, mins);
+        if (startDate < now) continue;
+        addEvent(
+          `reminder-${reminder.id}-${day.date}-${slot.replace(":", "")}`,
+          icsDate(date, mins),
+          icsDate(date, mins + 5),
+          `ePGP reminder: ${reminder.subjects.join(", ")}`,
+          matchedSessions
+            .map((s) => `S${s.slot} · ${s.time} · ${s.subject}`)
+            .join("\n"),
+        );
+      }
+
+      if (reminder.preClassNudge) {
+        for (const session of matchedSessions) {
+          const range = parseTimeRangeMinutes(session.time);
+          if (!range) continue;
+          const startDate = dateWithMinutes(date, range.start);
+          if (startDate < now) continue;
+          addEvent(
+            `class-${reminder.id}-${day.date}-${session.slot}-${session.subject}`,
+            icsDate(date, range.start),
+            icsDate(date, range.end),
+            `ePGP: ${session.subject}`,
+            `${day.day} ${day.date} · ${day.week}\nSlot S${session.slot} · ${session.time}`,
+            15,
+          );
+        }
+      }
+    }
+  }
+
+  lines.push("END:VCALENDAR");
+  return seen.size > 0 ? lines.join("\r\n") : null;
+}
+
+function downloadText(filename: string, text: string, type: string) {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function diagnosticsLabel(
+  diagnostics: ReturnType<typeof usePushReminders>["diagnostics"],
+): string {
+  if (diagnostics.lastFailureReason) {
+    return `Last push failed${diagnostics.lastAttemptStatus ? ` (${diagnostics.lastAttemptStatus})` : ""}: ${diagnostics.lastFailureReason}`;
+  }
+  if (diagnostics.lastSuccessAt)
+    return `Last push succeeded: ${formatDateTime(new Date(diagnostics.lastSuccessAt))}`;
+  if (diagnostics.lastAttemptAt)
+    return `Last push attempt: ${formatDateTime(new Date(diagnostics.lastAttemptAt))}`;
+  return "No push attempts yet — use Send test after enabling notifications.";
+}
+
+export default function RemindersSection({
+  scheduleData,
+  getSubjectColor,
+}: Props) {
   const allSubjects = scheduleData?.subjects ?? [];
   const {
     reminders,
+    diagnostics,
     addReminder,
     removeReminder,
     clearAll,
+    sendTestNotification,
     permission,
     supported,
     isSubscribed,
@@ -29,19 +282,23 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
   const [preClass, setPreClass] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
+  const [testStatus, setTestStatus] = useState<
+    "idle" | "sending" | "sent" | "failed"
+  >("idle");
   const [confirmClear, setConfirmClear] = useState(false);
 
   const slotScrollRef = useRef<HTMLDivElement>(null);
+  const supportInfo = useMemo(() => getBrowserSupportInfo(), []);
 
   const toggleSubject = (s: string) => {
-    setSubjects(prev => {
+    setSubjects((prev) => {
       const n = new Set(prev);
       n.has(s) ? n.delete(s) : n.add(s);
       return n;
     });
   };
   const toggleSlot = (slot: string) => {
-    setSlots(prev => {
+    setSlots((prev) => {
       const n = new Set(prev);
       n.has(slot) ? n.delete(slot) : n.add(slot);
       return n;
@@ -74,14 +331,39 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
       setPreClass(false);
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 2000);
-    } catch (e) {
+    } catch {
       setError("Couldn't save reminder. Try again.");
     }
   };
 
+  const handleSendTest = async () => {
+    setError(null);
+    setTestStatus("sending");
+    try {
+      const ok = await sendTestNotification();
+      setTestStatus(ok ? "sent" : "failed");
+      if (!ok) setError("Test notification failed. Check diagnostics below.");
+    } catch {
+      setTestStatus("failed");
+      setError("Couldn't send test notification. Enable notifications first.");
+    }
+  };
+
+  const handleDownloadCalendar = () => {
+    const ics = buildCalendarFile(reminders, scheduleData);
+    if (!ics) {
+      setError("No upcoming reminder sessions to add to calendar.");
+      return;
+    }
+    downloadText("epgp-reminders.ics", ics, "text/calendar;charset=utf-8");
+  };
+
   const scrollSlots = (dir: "left" | "right") => {
     if (!slotScrollRef.current) return;
-    slotScrollRef.current.scrollBy({ left: dir === "left" ? -200 : 200, behavior: "smooth" });
+    slotScrollRef.current.scrollBy({
+      left: dir === "left" ? -200 : 200,
+      behavior: "smooth",
+    });
   };
 
   return (
@@ -90,7 +372,7 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
       data-testid="reminders-section"
     >
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-indigo-50/40 transition-colors"
         data-testid="reminders-toggle"
       >
@@ -110,22 +392,49 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
             </span>
           )}
         </div>
-        {open ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+        {open ? (
+          <ChevronUp className="h-4 w-4 text-gray-400" />
+        ) : (
+          <ChevronDown className="h-4 w-4 text-gray-400" />
+        )}
       </button>
 
       {open && (
         <div className="px-5 pb-5 pt-1 space-y-5 border-t border-indigo-50">
+          <div
+            className={`rounded-xl border px-4 py-3 flex items-start gap-3 ${
+              supportInfo.recommended
+                ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                : "bg-amber-50 border-amber-200 text-amber-900"
+            }`}
+            data-testid="browser-guidance"
+          >
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <div className="text-xs leading-relaxed">
+              <div className="font-semibold">{supportInfo.title}</div>
+              <div>{supportInfo.detail}</div>
+            </div>
+          </div>
+
           {/* Support / permission banner */}
           {!supported && (
-            <div className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-xs text-rose-800" data-testid="unsupported-banner">
-              Your browser doesn't support push notifications. Try Chrome, Edge, or Firefox.
+            <div
+              className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-xs text-rose-800"
+              data-testid="unsupported-banner"
+            >
+              Your browser doesn't support push notifications. Try Chrome or
+              Edge, or use Add to calendar below.
             </div>
           )}
           {supported && permission !== "granted" && (
-            <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-3" data-testid="permission-banner">
+            <div
+              className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-3"
+              data-testid="permission-banner"
+            >
               <Bell className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
               <div className="flex-1 text-xs text-amber-900">
-                Enable push notifications to receive reminders even when this tab is closed.
+                Enable push notifications, then use Send test to verify this
+                browser can receive reminders.
               </div>
               <Button
                 size="sm"
@@ -139,11 +448,42 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
             </div>
           )}
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <Button
+              size="sm"
+              onClick={handleSendTest}
+              disabled={busy || testStatus === "sending"}
+              variant="outline"
+              data-testid="send-test-notification-btn"
+              className="h-9 rounded-full text-xs font-semibold"
+            >
+              <Send className="h-3.5 w-3.5 mr-1" />
+              {testStatus === "sending"
+                ? "Sending..."
+                : testStatus === "sent"
+                  ? "Test sent"
+                  : "Send test notification"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleDownloadCalendar}
+              disabled={reminders.length === 0}
+              variant="outline"
+              data-testid="download-calendar-btn"
+              className="h-9 rounded-full text-xs font-semibold"
+            >
+              <CalendarPlus className="h-3.5 w-3.5 mr-1" />
+              Add to calendar (.ics)
+            </Button>
+          </div>
+
           {/* Subjects */}
           <div>
-            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Subjects</label>
+            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+              Subjects
+            </label>
             <div className="flex flex-wrap gap-2 mt-2">
-              {allSubjects.map(s => {
+              {allSubjects.map((s) => {
                 const colors = getSubjectColor(s, allSubjects);
                 const sel = subjects.has(s);
                 return (
@@ -169,9 +509,15 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
             <div className="flex items-baseline justify-between">
               <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
                 Reminder time{slots.size !== 1 ? "s" : ""}
-                <span className="text-gray-400 normal-case font-normal"> · pick 1 or more</span>
+                <span className="text-gray-400 normal-case font-normal">
+                  {" "}
+                  · pick 1 or more
+                </span>
               </label>
-              <span className="text-[11px] text-gray-400" data-testid="slot-count">
+              <span
+                className="text-[11px] text-gray-400"
+                data-testid="slot-count"
+              >
                 {slots.size} selected
               </span>
             </div>
@@ -192,7 +538,7 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
                 className="flex gap-2 overflow-x-auto scroll-smooth py-1 px-9"
                 style={{ scrollbarWidth: "thin" }}
               >
-                {TIME_SLOT_OPTIONS.map(slot => {
+                {TIME_SLOT_OPTIONS.map((slot) => {
                   const sel = slots.has(slot);
                   return (
                     <button
@@ -230,7 +576,7 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
             <input
               type="checkbox"
               checked={preClass}
-              onChange={e => setPreClass(e.target.checked)}
+              onChange={(e) => setPreClass(e.target.checked)}
               data-testid="preclass-checkbox"
               className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
             />
@@ -240,13 +586,17 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
                 Pre-class nudge
               </div>
               <div className="text-[11px] text-gray-500 mt-0.5">
-                Also notify me 15 min before each selected subject's session starts.
+                Also notify me 15 min before each selected subject's session
+                starts.
               </div>
             </div>
           </label>
 
           {error && (
-            <div className="text-xs text-rose-600 font-medium" data-testid="reminder-error">
+            <div
+              className="text-xs text-rose-600 font-medium"
+              data-testid="reminder-error"
+            >
               {error}
             </div>
           )}
@@ -274,7 +624,8 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
               )}
             </Button>
             <span className="text-[11px] text-gray-400">
-              {subjects.size} subject{subjects.size !== 1 ? "s" : ""} · {slots.size} time{slots.size !== 1 ? "s" : ""}/day
+              {subjects.size} subject{subjects.size !== 1 ? "s" : ""} ·{" "}
+              {slots.size} time{slots.size !== 1 ? "s" : ""}/day
               {preClass ? " · +pre-class" : ""}
             </span>
           </div>
@@ -295,7 +646,10 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
                     <Trash2 className="h-3 w-3" /> Delete all
                   </button>
                 ) : (
-                  <div className="flex items-center gap-2" data-testid="confirm-clear">
+                  <div
+                    className="flex items-center gap-2"
+                    data-testid="confirm-clear"
+                  >
                     <span className="text-[11px] text-gray-500">Sure?</span>
                     <button
                       onClick={async () => {
@@ -318,7 +672,7 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
                 )}
               </div>
               <ul className="space-y-2" data-testid="active-reminders-list">
-                {reminders.map(r => (
+                {reminders.map((r) => (
                   <li
                     key={r.id}
                     data-testid={`reminder-item-${r.id}`}
@@ -326,7 +680,7 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
                   >
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex flex-wrap gap-1.5">
-                        {r.subjects.map(s => {
+                        {r.subjects.map((s) => {
                           const colors = getSubjectColor(s, allSubjects);
                           return (
                             <span
@@ -339,12 +693,17 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
                         })}
                       </div>
                       <div className="text-[11px] text-gray-500 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                        <span>🕐 {r.times.map(formatSlotLabel).join(" · ")}</span>
+                        <span>
+                          🕐 {r.times.map(formatSlotLabel).join(" · ")}
+                        </span>
                         {r.preClassNudge && (
                           <span className="inline-flex items-center gap-0.5 text-indigo-600 font-semibold">
                             <Sparkles className="h-3 w-3" /> +15 min nudge
                           </span>
                         )}
+                        <span className="font-medium text-gray-600">
+                          {nextFireLabel(r, scheduleData)}
+                        </span>
                       </div>
                     </div>
                     <button
@@ -358,19 +717,31 @@ export default function RemindersSection({ scheduleData, getSubjectColor }: Prop
                   </li>
                 ))}
               </ul>
-              <p className="text-[10px] text-gray-400 mt-3 leading-relaxed flex items-start gap-1">
-                {permission === "granted" ? (
-                  <>
-                    <BellRing className="h-3 w-3 text-indigo-400 mt-0.5 shrink-0" />
-                    Notifications will fire even when this tab is closed. Reminders auto-delete after the last lecture date of the selected subjects.
-                  </>
-                ) : (
-                  <>
-                    <BellOff className="h-3 w-3 text-gray-400 mt-0.5 shrink-0" />
-                    Notifications are disabled — enable them above to receive reminders.
-                  </>
-                )}
-              </p>
+              <div className="text-[10px] text-gray-400 mt-3 leading-relaxed space-y-1">
+                <p className="flex items-start gap-1">
+                  {permission === "granted" ? (
+                    <>
+                      <BellRing className="h-3 w-3 text-indigo-400 mt-0.5 shrink-0" />
+                      Notifications use a 5-minute delivery window and
+                      auto-delete after the last lecture date of the selected
+                      subjects.
+                    </>
+                  ) : (
+                    <>
+                      <BellOff className="h-3 w-3 text-gray-400 mt-0.5 shrink-0" />
+                      Notifications are disabled — enable them above to receive
+                      reminders.
+                    </>
+                  )}
+                </p>
+                <p
+                  className="flex items-start gap-1"
+                  data-testid="push-diagnostics"
+                >
+                  <Download className="h-3 w-3 text-gray-400 mt-0.5 shrink-0" />
+                  {diagnosticsLabel(diagnostics)}
+                </p>
+              </div>
             </div>
           )}
         </div>
