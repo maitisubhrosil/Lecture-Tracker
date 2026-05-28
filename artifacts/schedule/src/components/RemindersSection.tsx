@@ -232,6 +232,25 @@ function buildCalendarFile(
   return seen.size > 0 ? lines.join("\r\n") : null;
 }
 
+function buildCalendarFileForSelection(
+  selectedSubjects: string[],
+  selectedSlots: string[],
+  includePreClass: boolean,
+  scheduleData: ScheduleData | undefined,
+): string | null {
+  if (!scheduleData || selectedSubjects.length === 0) return null;
+
+  const pseudoReminder: Reminder = {
+    id: "draft",
+    subjects: selectedSubjects,
+    times: selectedSlots.length > 0 ? selectedSlots : TIME_SLOT_OPTIONS,
+    preClassNudge: includePreClass,
+    createdAt: new Date().toISOString(),
+  };
+
+  return buildCalendarFile([pseudoReminder], scheduleData);
+}
+
 function downloadText(filename: string, text: string, type: string) {
   const blob = new Blob([text], { type });
   const url = URL.createObjectURL(blob);
@@ -349,8 +368,26 @@ export default function RemindersSection({
     }
   };
 
+  const handleSubscribeCalendar = () => {
+    if (subjects.size === 0) return;
+    const qs = new URLSearchParams({
+      subjects: Array.from(subjects).join(","),
+      times: Array.from(slots).sort().join(","),
+      preClass: preClass ? "true" : "false",
+    });
+    const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "").replace(/\/api$/, "");
+    const url = `${base}/api/calendar/live.ics?${qs.toString()}`;
+    const webcal = url.replace(/^https?:/i, "webcal:");
+    window.open(webcal, "_blank", "noopener,noreferrer");
+  };
+
   const handleDownloadCalendar = () => {
-    const ics = buildCalendarFile(reminders, scheduleData);
+    const ics = buildCalendarFileForSelection(
+      Array.from(subjects),
+      Array.from(slots).sort(),
+      preClass,
+      scheduleData,
+    );
     if (!ics) {
       setError("No upcoming reminder sessions to add to calendar.");
       return;
@@ -466,14 +503,25 @@ export default function RemindersSection({
             </Button>
             <Button
               size="sm"
+              onClick={handleSubscribeCalendar}
+              disabled={subjects.size === 0}
+              variant="outline"
+              data-testid="subscribe-calendar-btn"
+              className="h-9 rounded-full text-xs font-semibold"
+            >
+              <CalendarPlus className="h-3.5 w-3.5 mr-1" />
+              Subscribe calendar (live)
+            </Button>
+            <Button
+              size="sm"
               onClick={handleDownloadCalendar}
-              disabled={reminders.length === 0}
+              disabled={subjects.size === 0}
               variant="outline"
               data-testid="download-calendar-btn"
               className="h-9 rounded-full text-xs font-semibold"
             >
               <CalendarPlus className="h-3.5 w-3.5 mr-1" />
-              Add to calendar (.ics)
+              Download calendar event (.ics)
             </Button>
           </div>
 
