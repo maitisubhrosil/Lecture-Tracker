@@ -368,6 +368,19 @@ export default function RemindersSection({
     }
   };
 
+  const handleSubscribeCalendar = () => {
+    if (subjects.size === 0) return;
+    const qs = new URLSearchParams({
+      subjects: Array.from(subjects).join(","),
+      times: Array.from(slots).sort().join(","),
+      preClass: preClass ? "true" : "false",
+    });
+    const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "").replace(/\/api$/, "");
+    const url = `${base}/api/calendar/live.ics?${qs.toString()}`;
+    const webcal = url.replace(/^https?:/i, "webcal:");
+    window.open(webcal, "_blank", "noopener,noreferrer");
+  };
+
   const handleDownloadCalendar = () => {
     const ics = buildCalendarFileForSelection(
       Array.from(subjects),
@@ -487,6 +500,17 @@ export default function RemindersSection({
                 : testStatus === "sent"
                   ? "Test sent"
                   : "Send test notification"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSubscribeCalendar}
+              disabled={subjects.size === 0}
+              variant="outline"
+              data-testid="subscribe-calendar-btn"
+              className="h-9 rounded-full text-xs font-semibold"
+            >
+              <CalendarPlus className="h-3.5 w-3.5 mr-1" />
+              Subscribe calendar (live)
             </Button>
             <Button
               size="sm"

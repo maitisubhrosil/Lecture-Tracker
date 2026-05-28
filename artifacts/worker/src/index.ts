@@ -333,6 +333,98 @@ async function getSchedule(env: Env, force = false): Promise<ScheduleData> {
   return data;
 }
 
+
+function escapeIcs(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function icsLocalDate(date: Date): string {
+  return `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}T${pad2(date.getHours())}${pad2(date.getMinutes())}00`;
+}
+
+function buildCalendarSubscriptionIcs(data: ScheduleData, subjects: string[], slots: string[], includePreClass: boolean): string {
+  const now = new Date();
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Lecture Tracker//ePGP Live Reminders//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-CALNAME:ePGP Live Reminder Feed",
+    "X-WR-TIMEZONE:Asia/Kolkata",
+  ];
+  const seen = new Set<string>();
+
+  const addEvent = (uid: string, start: Date, end: Date, summary: string, description: string, alarmMinutes?: number) => {
+    if (seen.has(uid)) return;
+    seen.add(uid);
+    lines.push("BEGIN:VEVENT");
+    lines.push(`UID:${uid}@lecture-tracker`);
+    lines.push(`DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")}`);
+    lines.push(`DTSTART;TZID=Asia/Kolkata:${icsLocalDate(start)}`);
+    lines.push(`DTEND;TZID=Asia/Kolkata:${icsLocalDate(end)}`);
+    lines.push(`SUMMARY:${escapeIcs(summary)}`);
+    lines.push(`DESCRIPTION:${escapeIcs(description)}`);
+    if (alarmMinutes) {
+      lines.push("BEGIN:VALARM");
+      lines.push("ACTION:DISPLAY");
+      lines.push(`DESCRIPTION:${escapeIcs(summary)}`);
+      lines.push(`TRIGGER:-PT${alarmMinutes}M`);
+      lines.push("END:VALARM");
+    }
+    lines.push("END:VEVENT");
+  };
+
+  for (const day of data.schedule) {
+    const iso = scheduleDateToISO(day.date);
+    if (!iso) continue;
+    const matched = day.sessions.filter((s) => subjects.includes(s.subject));
+    if (!matched.length) continue;
+    for (const slot of slots) {
+      const [h,m] = slot.split(':');
+      if (!h || !m) continue;
+      const start = new Date(`${iso}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00`);
+      if (start < now) continue;
+      const end = new Date(start.getTime() + 5*60*1000);
+      addEvent(
+        `live-reminder-${day.date}-${slot}-${subjects.join("-")}`,
+        start,
+        end,
+        `ePGP reminder: ${subjects.join(", ")}`,
+        matched.map((s) => `S${s.slot} · ${s.time} · ${s.subject}`).join("\n"),
+      );
+    }
+    if (includePreClass) {
+      for (const sess of matched) {
+        const mins = parseStartMinutes(sess.time);
+        if (mins === null) continue;
+        const start = new Date(`${iso}T00:00:00`);
+        start.setHours(Math.floor(mins/60), mins%60, 0, 0);
+        if (start < now) continue;
+        const end = new Date(start.getTime() + 90*60*1000);
+        addEvent(
+          `live-class-${day.date}-${sess.slot}-${sess.subject}`,
+          start,
+          end,
+          `ePGP: ${sess.subject}`,
+          `${day.day} ${day.date} · ${day.week}\nSlot S${sess.slot} · ${sess.time}`,
+          15,
+        );
+      }
+    }
+  }
+
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
 // ---------- Subscription store ----------
 async function getIndex(env: Env): Promise<string[]> {
   return (await env.EPGP_KV.get<string[]>(SUB_INDEX_KEY, "json")) ?? [];
@@ -696,6 +788,20 @@ async function handle(
     }));
     if ("error" in data) return errResp(data.error, 500);
     return json(data);
+  }
+
+
+  if (p === "/api/calendar/live.ics" && method === "GET") {
+    const subjectsParam = url.searchParams.get("subjects") ?? "";
+    const slotsParam = url.searchParams.get("times") ?? "";
+    const includePreClass = (url.searchParams.get("preClass") ?? "false") === "true";
+    const subjects = subjectsParam.split(",").map((s) => s.trim()).filter(Boolean);
+    const slots = slotsParam.split(",").map((s) => s.trim()).filter(Boolean);
+    if (subjects.length === 0) return errResp("subjects required");
+    const data = await getSchedule(env).catch((e) => ({ error: (e as Error).message }));
+    if ("error" in data) return errResp(data.error, 500);
+    const ics = buildCalendarSubscriptionIcs(data, subjects, slots, includePreClass);
+    return new Response(ics, { headers: { "Content-Type": "text/calendar; charset=utf-8", ...CORS_HEADERS } });
   }
 
   if (p === "/api/push/vapid-public-key") {
