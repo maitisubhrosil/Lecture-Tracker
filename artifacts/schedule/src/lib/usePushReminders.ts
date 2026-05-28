@@ -48,8 +48,8 @@ const API_BASE: string = normalizeApiBase(
 // on GitHub Pages). Service workers must be registered from that path instead of
 // the domain root, otherwise notification subscription fails with a misleading
 // "enable browser notifications" error even when the permission is already granted.
-const APP_BASE = import.meta.env.BASE_URL || "/";
-const SW_URL = `${APP_BASE}sw.js`;
+const SERVICE_WORKER_SCOPE = import.meta.env.BASE_URL || "/";
+const SERVICE_WORKER_URL = `${SERVICE_WORKER_SCOPE}sw.js`;
 
 function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
@@ -206,9 +206,11 @@ export function usePushReminders() {
   // Register SW once
   const registerSW = useCallback(async () => {
     if (!("serviceWorker" in navigator)) throw new Error("SW unsupported");
-    let reg = await navigator.serviceWorker.getRegistration(SW_URL);
+    let reg = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_SCOPE);
     if (!reg) {
-      reg = await navigator.serviceWorker.register(SW_URL, { scope: APP_BASE });
+      reg = await navigator.serviceWorker.register(SERVICE_WORKER_URL, {
+        scope: SERVICE_WORKER_SCOPE,
+      });
     }
     await navigator.serviceWorker.ready;
     return reg;

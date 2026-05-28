@@ -12,7 +12,7 @@ Live app: <https://maitisubhrosil.github.io/Lecture-Tracker/>
 - Supports an optional 15-minute pre-class nudge before the actual lecture start time.
 - Keeps reminders active until the selected subject's last lecture in the timetable has passed.
 - Sends true Web Push notifications from the backend, so reminders can arrive even when the tab is closed.
-- Refreshes the schedule automatically through GitHub Actions every day at 5:30 AM IST.
+- Refreshes the schedule automatically through GitHub Actions every day at 5:30 AM, 11:30 AM, and 5:30 PM IST.
 - Works on phones, tablets, laptops, and desktops. On phones, users can add it to the home screen for app-like access.
 
 ## How classmates should use it
@@ -174,7 +174,7 @@ Automated workflows:
 
 - Changes to `artifacts/worker/**`, `lib/**`, workspace files, or the worker workflow deploy the Cloudflare Worker.
 - Pushes to `main` build and deploy the schedule frontend to GitHub Pages.
-- A scheduled workflow runs daily at midnight UTC, which is 5:30 AM IST, to fetch the latest schedule and deploy the refreshed frontend.
+- A scheduled workflow runs three times daily at 00:00, 06:00, and 12:00 UTC (5:30 AM, 11:30 AM, and 5:30 PM IST) to fetch the latest schedule and deploy the refreshed frontend.
 
 ## Smoke testing production
 
