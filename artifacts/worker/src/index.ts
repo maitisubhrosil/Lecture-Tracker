@@ -868,10 +868,12 @@ async function handle(
       rec.updatedAt = new Date().toISOString();
       await putSubscriber(env, rec);
     }
-    return json(
-      { ok: result.ok, result, diagnostics: rec.diagnostics ?? {} },
-      result.ok ? 200 : 502,
-    );
+    return json({
+      ok: result.ok,
+      result,
+      diagnostics: rec.diagnostics ?? {},
+      httpStatus: result.ok ? 200 : 502,
+    });
   }
 
   if (p === "/api/push/reminders" && method === "POST") {
