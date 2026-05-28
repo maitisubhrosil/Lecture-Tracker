@@ -373,6 +373,18 @@ export function usePushReminders() {
   const sendTestNotification = useCallback(async () => {
     let ep = endpoint;
     if (!ep) ep = await subscribe();
+    if (ep) {
+      try {
+        const reg = await registerSW();
+        const existing = await reg.pushManager.getSubscription();
+        if (!existing || existing.endpoint !== ep) {
+          const refreshed = await subscribe();
+          if (refreshed) ep = refreshed;
+        }
+      } catch {
+        // Fall through to backend test with current endpoint.
+      }
+    }
     if (!ep) {
       const perm =
         typeof Notification !== "undefined" ? Notification.permission : "denied";
@@ -392,7 +404,7 @@ export function usePushReminders() {
     );
     setDiagnostics(res.diagnostics ?? {});
     return res.ok;
-  }, [endpoint, subscribe]);
+  }, [endpoint, subscribe, registerSW]);
 
   return {
     reminders,
