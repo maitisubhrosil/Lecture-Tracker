@@ -305,6 +305,7 @@ export default function RemindersSection({
     "idle" | "sending" | "sent" | "failed"
   >("idle");
   const [confirmClear, setConfirmClear] = useState(false);
+  const [refreshingCache, setRefreshingCache] = useState(false);
 
   const slotScrollRef = useRef<HTMLDivElement>(null);
   const supportInfo = useMemo(() => getBrowserSupportInfo(), []);
@@ -362,9 +363,13 @@ export default function RemindersSection({
       const ok = await sendTestNotification();
       setTestStatus(ok ? "sent" : "failed");
       if (!ok) setError("Test notification failed. Check diagnostics below.");
-    } catch {
+    } catch (err) {
       setTestStatus("failed");
-      setError("Couldn't send test notification. Enable notifications first.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't send test notification. Please try again.",
+      );
     }
   };
 
@@ -393,6 +398,30 @@ export default function RemindersSection({
       return;
     }
     downloadText("epgp-reminders.ics", ics, "text/calendar;charset=utf-8");
+  };
+
+  const handleForceRefreshCache = async () => {
+    setError(null);
+    setRefreshingCache(true);
+    try {
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((reg) => reg.unregister()));
+      }
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      }
+      localStorage.removeItem("epgp_push_endpoint");
+      sessionStorage.clear();
+      window.location.reload();
+    } catch {
+      setError(
+        "Couldn't force refresh cache automatically. Please reload the page once.",
+      );
+    } finally {
+      setRefreshingCache(false);
+    }
   };
 
   const scrollSlots = (dir: "left" | "right") => {
@@ -452,6 +481,28 @@ export default function RemindersSection({
               <div>{supportInfo.detail}</div>
             </div>
           </div>
+          {(supportInfo.kind === "ios" || supportInfo.kind === "android-chrome") && (
+            <div
+              className="rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-start gap-3"
+              data-testid="force-refresh-banner"
+            >
+              <Download className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+              <div className="flex-1 text-xs text-blue-900">
+                Seeing old data or old UI labels? Use force refresh to clear app
+                cache and reload.
+              </div>
+              <Button
+                size="sm"
+                onClick={handleForceRefreshCache}
+                disabled={refreshingCache}
+                variant="outline"
+                className="h-7 text-[11px] px-3 rounded-full border-blue-300 text-blue-700 hover:bg-blue-100"
+                data-testid="force-refresh-btn"
+              >
+                {refreshingCache ? "Refreshing..." : "Force refresh app cache"}
+              </Button>
+            </div>
+          )}
 
           {/* Support / permission banner */}
           {!supported && (

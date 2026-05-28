@@ -206,7 +206,9 @@ export function usePushReminders() {
   // Register SW once
   const registerSW = useCallback(async () => {
     if (!("serviceWorker" in navigator)) throw new Error("SW unsupported");
-    let reg = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_SCOPE);
+    let reg =
+      (await navigator.serviceWorker.getRegistration(SERVICE_WORKER_SCOPE)) ??
+      (await navigator.serviceWorker.getRegistration());
     if (!reg) {
       reg = await navigator.serviceWorker.register(SERVICE_WORKER_URL, {
         scope: SERVICE_WORKER_SCOPE,
@@ -371,7 +373,16 @@ export function usePushReminders() {
   const sendTestNotification = useCallback(async () => {
     let ep = endpoint;
     if (!ep) ep = await subscribe();
-    if (!ep) throw new Error("Notifications not enabled");
+    if (!ep) {
+      const perm =
+        typeof Notification !== "undefined" ? Notification.permission : "denied";
+      if (perm === "granted") {
+        throw new Error(
+          "Notification permission is granted, but push subscription failed. Try Force refresh app cache, then Enable + Send test again.",
+        );
+      }
+      throw new Error("Notifications are not enabled for this browser.");
+    }
     const res = await fetchJSON<{ ok: boolean; diagnostics?: PushDiagnostics }>(
       apiUrl("/api/push/test"),
       {
