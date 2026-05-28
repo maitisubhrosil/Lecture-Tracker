@@ -485,7 +485,7 @@ export default function RemindersSection({
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <Button
               size="sm"
               onClick={handleSendTest}
@@ -524,6 +524,9 @@ export default function RemindersSection({
               Download calendar event (.ics)
             </Button>
           </div>
+          <p className="text-[11px] text-gray-400">
+            Select at least one subject to enable calendar subscribe/download.
+          </p>
 
           {/* Subjects */}
           <div>
