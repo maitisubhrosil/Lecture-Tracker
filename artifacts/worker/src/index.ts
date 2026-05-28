@@ -177,8 +177,8 @@ function scheduleDateToISO(dateStr: string): string | null {
   return `${year}-${month}-${String(day).padStart(2, "0")}`;
 }
 
-function parseStartMinutes(timeRange: string): number | null {
-  const m = timeRange.match(/(\d+):(\d+)\s*(AM|PM)/i);
+function parseClockMinutes(value: string): number | null {
+  const m = value.match(/(\d+):(\d+)\s*(AM|PM)/i);
   if (!m) return null;
   let h = parseInt(m[1]!);
   const min = parseInt(m[2]!);
@@ -186,6 +186,21 @@ function parseStartMinutes(timeRange: string): number | null {
   if (period === "PM" && h !== 12) h += 12;
   if (period === "AM" && h === 12) h = 0;
   return h * 60 + min;
+}
+
+function parseStartMinutes(timeRange: string): number | null {
+  const first = timeRange.match(/\d+:\d+\s*(?:AM|PM)/i)?.[0];
+  return first ? parseClockMinutes(first) : null;
+}
+
+function parseTimeRangeMinutes(
+  timeRange: string,
+): { start: number; end: number } | null {
+  const matches = timeRange.match(/\d+:\d+\s*(?:AM|PM)/gi);
+  if (!matches || matches.length < 2) return null;
+  const start = parseClockMinutes(matches[0]!);
+  const end = parseClockMinutes(matches[matches.length - 1]!);
+  return start === null || end === null ? null : { start, end };
 }
 
 // ---------- Schedule (Google Sheets CSV → ScheduleData) ----------
@@ -388,37 +403,22 @@ function buildCalendarSubscriptionIcs(data: ScheduleData, subjects: string[], sl
     if (!iso) continue;
     const matched = day.sessions.filter((s) => subjects.includes(s.subject));
     if (!matched.length) continue;
-    for (const slot of slots) {
-      const [h,m] = slot.split(':');
-      if (!h || !m) continue;
-      const start = new Date(`${iso}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00`);
+    for (const sess of matched) {
+      const range = parseTimeRangeMinutes(sess.time);
+      if (!range) continue;
+      const start = new Date(`${iso}T00:00:00`);
+      start.setHours(Math.floor(range.start / 60), range.start % 60, 0, 0);
       if (start < now) continue;
-      const end = new Date(start.getTime() + 5*60*1000);
+      const end = new Date(`${iso}T00:00:00`);
+      end.setHours(Math.floor(range.end / 60), range.end % 60, 0, 0);
       addEvent(
-        `live-reminder-${day.date}-${slot}-${subjects.join("-")}`,
+        `live-class-${day.date}-${sess.slot}-${sess.subject}`,
         start,
         end,
-        `ePGP reminder: ${subjects.join(", ")}`,
-        matched.map((s) => `S${s.slot} · ${s.time} · ${s.subject}`).join("\n"),
+        `ePGP: ${sess.subject}`,
+        `${day.day} ${day.date} · ${day.week}\nSlot S${sess.slot} · ${sess.time}`,
+        includePreClass ? 15 : undefined,
       );
-    }
-    if (includePreClass) {
-      for (const sess of matched) {
-        const mins = parseStartMinutes(sess.time);
-        if (mins === null) continue;
-        const start = new Date(`${iso}T00:00:00`);
-        start.setHours(Math.floor(mins/60), mins%60, 0, 0);
-        if (start < now) continue;
-        const end = new Date(start.getTime() + 90*60*1000);
-        addEvent(
-          `live-class-${day.date}-${sess.slot}-${sess.subject}`,
-          start,
-          end,
-          `ePGP: ${sess.subject}`,
-          `${day.day} ${day.date} · ${day.week}\nSlot S${sess.slot} · ${sess.time}`,
-          15,
-        );
-      }
     }
   }
 
@@ -585,6 +585,15 @@ function recordPushFailure(
   };
 }
 
+function toFetchBody(body: ArrayBuffer | ArrayBufferView): ArrayBuffer {
+  // webpush-webcrypto returns an ArrayBuffer in Worker/Node runtimes, while
+  // older assumptions treated the encrypted payload as an ArrayBufferView.
+  if (body instanceof ArrayBuffer) return body;
+  const copy = new Uint8Array(body.byteLength);
+  copy.set(new Uint8Array(body.buffer, body.byteOffset, body.byteLength));
+  return copy.buffer;
+}
+
 async function sendPush(
   env: Env,
   rec: SubscriberRecord,
@@ -608,14 +617,10 @@ async function sendPush(
       ttl: 60,
       urgency: "normal",
     });
-    const pushBody = body.buffer.slice(
-      body.byteOffset,
-      body.byteOffset + body.byteLength,
-    ) as ArrayBuffer;
     const res = await fetch(endpoint, {
       method: "POST",
       headers,
-      body: pushBody,
+      body: toFetchBody(body as ArrayBuffer | ArrayBufferView),
     });
     if (res.status === 404 || res.status === 410) {
       recordPushFailure(rec, res.status, "Subscription expired or was revoked");

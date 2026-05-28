@@ -193,37 +193,19 @@ function buildCalendarFile(
       );
       if (matchedSessions.length === 0) continue;
 
-      for (const slot of reminder.times) {
-        const mins = parseClockMinutes(slot);
-        if (mins === null) continue;
-        const startDate = dateWithMinutes(date, mins);
+      for (const session of matchedSessions) {
+        const range = parseTimeRangeMinutes(session.time);
+        if (!range) continue;
+        const startDate = dateWithMinutes(date, range.start);
         if (startDate < now) continue;
         addEvent(
-          `reminder-${reminder.id}-${day.date}-${slot.replace(":", "")}`,
-          icsDate(date, mins),
-          icsDate(date, mins + 5),
-          `ePGP reminder: ${reminder.subjects.join(", ")}`,
-          matchedSessions
-            .map((s) => `S${s.slot} · ${s.time} · ${s.subject}`)
-            .join("\n"),
+          `class-${reminder.id}-${day.date}-${session.slot}-${session.subject}`,
+          icsDate(date, range.start),
+          icsDate(date, range.end),
+          `ePGP: ${session.subject}`,
+          `${day.day} ${day.date} · ${day.week}\nSlot S${session.slot} · ${session.time}`,
+          reminder.preClassNudge ? 15 : undefined,
         );
-      }
-
-      if (reminder.preClassNudge) {
-        for (const session of matchedSessions) {
-          const range = parseTimeRangeMinutes(session.time);
-          if (!range) continue;
-          const startDate = dateWithMinutes(date, range.start);
-          if (startDate < now) continue;
-          addEvent(
-            `class-${reminder.id}-${day.date}-${session.slot}-${session.subject}`,
-            icsDate(date, range.start),
-            icsDate(date, range.end),
-            `ePGP: ${session.subject}`,
-            `${day.day} ${day.date} · ${day.week}\nSlot S${session.slot} · ${session.time}`,
-            15,
-          );
-        }
       }
     }
   }
@@ -243,7 +225,8 @@ function buildCalendarFileForSelection(
   const pseudoReminder: Reminder = {
     id: "draft",
     subjects: selectedSubjects,
-    times: selectedSlots.length > 0 ? selectedSlots : TIME_SLOT_OPTIONS,
+    // Calendar exports should follow the actual timetable, not reminder slots.
+    times: selectedSlots,
     preClassNudge: includePreClass,
     createdAt: new Date().toISOString(),
   };
