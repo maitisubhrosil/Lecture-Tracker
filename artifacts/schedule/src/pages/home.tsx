@@ -287,7 +287,7 @@ export default function Home() {
                 className="text-[11px] text-gray-400 shrink-0"
                 data-testid="text-last-updated"
               >
-                last synced{" "}
+                synced (last fetch){" "}
                 {new Date(data.lastFetched).toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
@@ -492,7 +492,7 @@ export default function Home() {
       {!isLoading && (
         <footer className="max-w-2xl mx-auto px-4 pt-10 pb-4 text-center">
           <p className="text-[11px] text-gray-300">
-            schedule refreshes multiple times daily · IIM Raipur ePGP Batch 5
+            updates at 5:30 AM · 11:30 AM · 5:30 PM IST · IIM Raipur ePGP Batch 5
           </p>
         </footer>
       )}
