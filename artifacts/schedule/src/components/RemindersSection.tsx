@@ -232,6 +232,25 @@ function buildCalendarFile(
   return seen.size > 0 ? lines.join("\r\n") : null;
 }
 
+function buildCalendarFileForSelection(
+  selectedSubjects: string[],
+  selectedSlots: string[],
+  includePreClass: boolean,
+  scheduleData: ScheduleData | undefined,
+): string | null {
+  if (!scheduleData || selectedSubjects.length === 0) return null;
+
+  const pseudoReminder: Reminder = {
+    id: "draft",
+    subjects: selectedSubjects,
+    times: selectedSlots.length > 0 ? selectedSlots : TIME_SLOT_OPTIONS,
+    preClassNudge: includePreClass,
+    createdAt: new Date().toISOString(),
+  };
+
+  return buildCalendarFile([pseudoReminder], scheduleData);
+}
+
 function downloadText(filename: string, text: string, type: string) {
   const blob = new Blob([text], { type });
   const url = URL.createObjectURL(blob);
@@ -286,6 +305,7 @@ export default function RemindersSection({
     "idle" | "sending" | "sent" | "failed"
   >("idle");
   const [confirmClear, setConfirmClear] = useState(false);
+  const [refreshingCache, setRefreshingCache] = useState(false);
 
   const slotScrollRef = useRef<HTMLDivElement>(null);
   const supportInfo = useMemo(() => getBrowserSupportInfo(), []);
@@ -343,19 +363,65 @@ export default function RemindersSection({
       const ok = await sendTestNotification();
       setTestStatus(ok ? "sent" : "failed");
       if (!ok) setError("Test notification failed. Check diagnostics below.");
-    } catch {
+    } catch (err) {
       setTestStatus("failed");
-      setError("Couldn't send test notification. Enable notifications first.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't send test notification. Please try again.",
+      );
     }
   };
 
+  const handleSubscribeCalendar = () => {
+    if (subjects.size === 0) return;
+    const qs = new URLSearchParams({
+      subjects: Array.from(subjects).join(","),
+      times: Array.from(slots).sort().join(","),
+      preClass: preClass ? "true" : "false",
+    });
+    const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "").replace(/\/api$/, "");
+    const url = `${base}/api/calendar/live.ics?${qs.toString()}`;
+    const webcal = url.replace(/^https?:/i, "webcal:");
+    window.open(webcal, "_blank", "noopener,noreferrer");
+  };
+
   const handleDownloadCalendar = () => {
-    const ics = buildCalendarFile(reminders, scheduleData);
+    const ics = buildCalendarFileForSelection(
+      Array.from(subjects),
+      Array.from(slots).sort(),
+      preClass,
+      scheduleData,
+    );
     if (!ics) {
       setError("No upcoming reminder sessions to add to calendar.");
       return;
     }
     downloadText("epgp-reminders.ics", ics, "text/calendar;charset=utf-8");
+  };
+
+  const handleForceRefreshCache = async () => {
+    setError(null);
+    setRefreshingCache(true);
+    try {
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((reg) => reg.unregister()));
+      }
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      }
+      localStorage.removeItem("epgp_push_endpoint");
+      sessionStorage.clear();
+      window.location.reload();
+    } catch {
+      setError(
+        "Couldn't force refresh cache automatically. Please reload the page once.",
+      );
+    } finally {
+      setRefreshingCache(false);
+    }
   };
 
   const scrollSlots = (dir: "left" | "right") => {
@@ -415,6 +481,28 @@ export default function RemindersSection({
               <div>{supportInfo.detail}</div>
             </div>
           </div>
+          {(supportInfo.kind === "ios" || supportInfo.kind === "android-chrome") && (
+            <div
+              className="rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-start gap-3"
+              data-testid="force-refresh-banner"
+            >
+              <Download className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+              <div className="flex-1 text-xs text-blue-900">
+                Seeing old data or old UI labels? Use force refresh to clear app
+                cache and reload.
+              </div>
+              <Button
+                size="sm"
+                onClick={handleForceRefreshCache}
+                disabled={refreshingCache}
+                variant="outline"
+                className="h-7 text-[11px] px-3 rounded-full border-blue-300 text-blue-700 hover:bg-blue-100"
+                data-testid="force-refresh-btn"
+              >
+                {refreshingCache ? "Refreshing..." : "Force refresh app cache"}
+              </Button>
+            </div>
+          )}
 
           {/* Support / permission banner */}
           {!supported && (
@@ -448,7 +536,7 @@ export default function RemindersSection({
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <Button
               size="sm"
               onClick={handleSendTest}
@@ -466,16 +554,30 @@ export default function RemindersSection({
             </Button>
             <Button
               size="sm"
+              onClick={handleSubscribeCalendar}
+              disabled={subjects.size === 0}
+              variant="outline"
+              data-testid="subscribe-calendar-btn"
+              className="h-9 rounded-full text-xs font-semibold"
+            >
+              <CalendarPlus className="h-3.5 w-3.5 mr-1" />
+              Subscribe calendar (live)
+            </Button>
+            <Button
+              size="sm"
               onClick={handleDownloadCalendar}
-              disabled={reminders.length === 0}
+              disabled={subjects.size === 0}
               variant="outline"
               data-testid="download-calendar-btn"
               className="h-9 rounded-full text-xs font-semibold"
             >
               <CalendarPlus className="h-3.5 w-3.5 mr-1" />
-              Add to calendar (.ics)
+              Download calendar event (.ics)
             </Button>
           </div>
+          <p className="text-[11px] text-gray-400">
+            Select at least one subject to enable calendar subscribe/download.
+          </p>
 
           {/* Subjects */}
           <div>
