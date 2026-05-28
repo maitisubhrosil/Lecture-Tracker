@@ -481,7 +481,7 @@ export default function RemindersSection({
               <div>{supportInfo.detail}</div>
             </div>
           </div>
-          {(supportInfo.kind === "ios" || supportInfo.kind === "android-chrome") && (
+          {supported && (
             <div
               className="rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 flex items-start gap-3"
               data-testid="force-refresh-banner"
