@@ -1,6 +1,9 @@
 import { useState, useMemo } from "react";
 import { useScheduleData } from "@/lib/useScheduleData";
-import { BellRing, Clock, RefreshCw, Users } from "lucide-react";
+import { BellRing, Clock, HelpCircle, RefreshCw, Users } from "lucide-react";
+
+const HELP_DOC_URL =
+  "https://github.com/maitisubhrosil/Lecture-Tracker/blob/main/help.md";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import RemindersSection from "@/components/RemindersSection";
@@ -282,18 +285,30 @@ export default function Home() {
                 <BellRing className="h-3 w-3 text-indigo-400" />
               </div>
             </div>
-            {!isLoading && data?.lastFetched && (
-              <span
-                className="text-[11px] text-gray-400 shrink-0"
-                data-testid="text-last-updated"
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <a
+                href={HELP_DOC_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 underline underline-offset-2"
+                data-testid="header-setup-help-link"
               >
-                last synced{" "}
-                {new Date(data.lastFetched).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
-            )}
+                <HelpCircle className="h-3.5 w-3.5" />
+                Setup help
+              </a>
+              {!isLoading && data?.lastFetched && (
+                <span
+                  className="text-[11px] text-gray-400"
+                  data-testid="text-last-updated"
+                >
+                  last synced{" "}
+                  {new Date(data.lastFetched).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              )}
+            </div>
           </div>
 
           {isLoading ? (
