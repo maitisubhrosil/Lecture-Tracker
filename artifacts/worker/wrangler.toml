@@ -8,7 +8,7 @@ compatibility_flags = ["nodejs_compat"]
 
 # Cron trigger — every minute. Cloudflare guarantees execution.
 [triggers]
-crons = ["* * * * *"]
+crons = ["*/5 * * * *"]
 
 # KV namespace for subscriptions + reminders + sent-dedupe state
 # After running `wrangler kv namespace create EPGP_KV`, paste the id below.
