@@ -85,7 +85,7 @@ const SUB_INDEX_KEY = "subs:index"; // string[] of endpoints
 const subKey = (endpoint: string) => `sub:${endpoint}`;
 const SCHEDULE_CACHE_KEY = "schedule:cache";
 const SCHEDULE_DATE_KEY = "schedule:date";
-const CRON_TOLERANCE_MINUTES = 5;
+const CRON_TOLERANCE_MINUTES = 6;
 
 // ---------- Utilities ----------
 const CORS_HEADERS: HeadersInit = {
