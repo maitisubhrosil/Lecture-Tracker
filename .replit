@@ -29,7 +29,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=23496 BASE_PATH=/ pnpm --filter @workspace/schedule run dev"
+args = "PORT=23496 BASE_PATH=/ artifacts/schedule/node_modules/.bin/vite --config artifacts/schedule/vite.config.ts --host 0.0.0.0"
 waitForPort = 23496
 
 [agent]
