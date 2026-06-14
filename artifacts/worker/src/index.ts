@@ -444,33 +444,23 @@ function buildCalendarSubscriptionIcs(data: ScheduleData, subjects: string[], sl
 // This means every cron tick costs exactly 3 reads (schedule×2 + blob) and
 // at most 1 write, regardless of subscriber count.
 
+// getAllSubs reads the single blob. On first call after deploy (subs:all missing),
+// it transparently migrates from the old per-user keys so no data is lost.
+// This runs on EVERY code path (HTTP and cron) so migration fires on whichever
+// request arrives first, not only on a cron tick.
 async function getAllSubs(env: Env): Promise<Record<string, SubscriberRecord>> {
-  return (
-    (await env.EPGP_KV.get<Record<string, SubscriberRecord>>(
-      SUBS_ALL_KEY,
-      "json",
-    )) ?? {}
+  const existing = await env.EPGP_KV.get<Record<string, SubscriberRecord>>(
+    SUBS_ALL_KEY,
+    "json",
   );
-}
+  if (existing !== null) return existing;
 
-async function putAllSubs(
-  env: Env,
-  subs: Record<string, SubscriberRecord>,
-): Promise<void> {
-  await env.EPGP_KV.put(SUBS_ALL_KEY, JSON.stringify(subs));
-}
-
-// One-time migration: if the new blob is missing but old individual keys exist,
-// read them all and write the new blob. Runs at most once after deploy.
-async function migrateIfNeeded(env: Env): Promise<void> {
-  const existing = await env.EPGP_KV.get(SUBS_ALL_KEY);
-  if (existing !== null) return; // already migrated
-
+  // subs:all doesn't exist yet — migrate from legacy per-user keys.
   const legacyIndex = await env.EPGP_KV.get<string[]>(
     LEGACY_SUB_INDEX_KEY,
     "json",
   );
-  if (!legacyIndex || legacyIndex.length === 0) return; // nothing to migrate
+  if (!legacyIndex || legacyIndex.length === 0) return {};
 
   console.log(`Migrating ${legacyIndex.length} legacy subscriber records…`);
   const subs: Record<string, SubscriberRecord> = {};
@@ -485,7 +475,14 @@ async function migrateIfNeeded(env: Env): Promise<void> {
   }
   await putAllSubs(env, subs);
   console.log(`Migration complete. ${Object.keys(subs).length} records written to ${SUBS_ALL_KEY}.`);
-  // Leave legacy keys in place; they'll expire naturally or can be cleaned manually.
+  return subs;
+}
+
+async function putAllSubs(
+  env: Env,
+  subs: Record<string, SubscriberRecord>,
+): Promise<void> {
+  await env.EPGP_KV.put(SUBS_ALL_KEY, JSON.stringify(subs));
 }
 
 // Prune sent keys for dates strictly before today to keep the blob small.
@@ -702,8 +699,6 @@ async function sendPush(
 // KV budget per tick: 3 reads (schedule:date, schedule:cache, subs:all)
 //                   + 0–1 writes (subs:all, only when something changed)
 async function evaluateAll(env: Env) {
-  await migrateIfNeeded(env);
-
   const data = await getSchedule(env).catch(() => null);
   if (!data) {
     console.warn("no schedule available");
