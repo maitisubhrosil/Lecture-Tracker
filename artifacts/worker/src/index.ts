@@ -92,7 +92,8 @@ interface SubscriberRecord {
 // ---------- KV keys ----------
 // All subscriber records live in one blob to minimise KV read operations.
 const SUBS_ALL_KEY = "subs:all"; // Record<endpoint, SubscriberRecord>
-// Legacy keys — only used during one-time migration on first cron run after deploy.
+const LEGACY_MIGRATION_FLAG = "subs:migrated"; // written once migration is confirmed complete
+// Legacy keys — read during one-time migration, never written again.
 const LEGACY_SUB_INDEX_KEY = "subs:index";
 const legacySubKey = (endpoint: string) => `sub:${endpoint}`;
 
@@ -444,37 +445,46 @@ function buildCalendarSubscriptionIcs(data: ScheduleData, subjects: string[], sl
 // This means every cron tick costs exactly 3 reads (schedule×2 + blob) and
 // at most 1 write, regardless of subscriber count.
 
-// getAllSubs reads the single blob. On first call after deploy (subs:all missing),
-// it transparently migrates from the old per-user keys so no data is lost.
-// This runs on EVERY code path (HTTP and cron) so migration fires on whichever
-// request arrives first, not only on a cron tick.
+// getAllSubs reads the single blob, merging any legacy per-user keys that are
+// not yet present. Uses a separate flag key ("subs:migrated") so the merge
+// runs exactly once — even if subs:all already exists with partial data.
 async function getAllSubs(env: Env): Promise<Record<string, SubscriberRecord>> {
-  const existing = await env.EPGP_KV.get<Record<string, SubscriberRecord>>(
-    SUBS_ALL_KEY,
-    "json",
-  );
-  if (existing !== null) return existing;
+  const [existing, migrationDone] = await Promise.all([
+    env.EPGP_KV.get<Record<string, SubscriberRecord>>(SUBS_ALL_KEY, "json"),
+    env.EPGP_KV.get(LEGACY_MIGRATION_FLAG),
+  ]);
 
-  // subs:all doesn't exist yet — migrate from legacy per-user keys.
-  const legacyIndex = await env.EPGP_KV.get<string[]>(
-    LEGACY_SUB_INDEX_KEY,
-    "json",
-  );
-  if (!legacyIndex || legacyIndex.length === 0) return {};
+  const subs: Record<string, SubscriberRecord> = existing ?? {};
 
-  console.log(`Migrating ${legacyIndex.length} legacy subscriber records…`);
-  const subs: Record<string, SubscriberRecord> = {};
-  for (const endpoint of legacyIndex) {
-    const rec = await env.EPGP_KV.get<SubscriberRecord>(
-      legacySubKey(endpoint),
+  if (migrationDone === null) {
+    // Migration not yet confirmed — check for legacy data and merge any
+    // endpoints missing from the blob (handles partial earlier migrations).
+    const legacyIndex = await env.EPGP_KV.get<string[]>(
+      LEGACY_SUB_INDEX_KEY,
       "json",
     );
-    if (rec?.subscription?.endpoint) {
-      subs[endpoint] = rec;
+    if (legacyIndex && legacyIndex.length > 0) {
+      let mergedCount = 0;
+      for (const endpoint of legacyIndex) {
+        if (subs[endpoint]) continue; // already present, keep newer version
+        const rec = await env.EPGP_KV.get<SubscriberRecord>(
+          legacySubKey(endpoint),
+          "json",
+        );
+        if (rec?.subscription?.endpoint) {
+          subs[endpoint] = rec;
+          mergedCount++;
+        }
+      }
+      if (mergedCount > 0) {
+        console.log(`Merged ${mergedCount} legacy subscriber records into subs:all.`);
+        await putAllSubs(env, subs);
+      }
     }
+    // Mark migration complete so this never runs again.
+    await env.EPGP_KV.put(LEGACY_MIGRATION_FLAG, "1");
   }
-  await putAllSubs(env, subs);
-  console.log(`Migration complete. ${Object.keys(subs).length} records written to ${SUBS_ALL_KEY}.`);
+
   return subs;
 }
 
