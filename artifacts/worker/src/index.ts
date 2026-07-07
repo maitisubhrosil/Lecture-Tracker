@@ -19,6 +19,15 @@
  *   fires Web Push when slot times match or 15 min before each matched session
  *   (if pre-class nudge enabled). Auto-expires reminders after their last
  *   matching lecture date.
+ *
+ * KV usage strategy (keeps ops well inside the free tier):
+ *   - All subscriber records are stored in a SINGLE key ("subs:all") as a
+ *     JSON map of endpoint → SubscriberRecord.  The cron does exactly 3 KV
+ *     reads per tick (schedule:date, schedule:cache, subs:all) and at most 1
+ *     write (subs:all) if anything changed — regardless of subscriber count.
+ *   - HTTP API endpoints load/save the same blob; they run infrequently so the
+ *     extra byte transfer is negligible.
+ *   - "sent" keys older than today are pruned each cron run to keep the blob small.
  */
 
 import {
@@ -81,11 +90,16 @@ interface SubscriberRecord {
 }
 
 // ---------- KV keys ----------
-const SUB_INDEX_KEY = "subs:index"; // string[] of endpoints
-const subKey = (endpoint: string) => `sub:${endpoint}`;
+// All subscriber records live in one blob to minimise KV read operations.
+const SUBS_ALL_KEY = "subs:all"; // Record<endpoint, SubscriberRecord>
+const LEGACY_MIGRATION_FLAG = "subs:migrated"; // written once migration is confirmed complete
+// Legacy keys — read during one-time migration, never written again.
+const LEGACY_SUB_INDEX_KEY = "subs:index";
+const legacySubKey = (endpoint: string) => `sub:${endpoint}`;
+
 const SCHEDULE_CACHE_KEY = "schedule:cache";
 const SCHEDULE_DATE_KEY = "schedule:date";
-const CRON_TOLERANCE_MINUTES = 5;
+const CRON_TOLERANCE_MINUTES = 6;
 
 // ---------- Utilities ----------
 const CORS_HEADERS: HeadersInit = {
@@ -425,57 +439,88 @@ function buildCalendarSubscriptionIcs(data: ScheduleData, subjects: string[], sl
   lines.push("END:VCALENDAR");
   return lines.join("\r\n");
 }
-// ---------- Subscription store ----------
-async function getIndex(env: Env): Promise<string[]> {
-  return (await env.EPGP_KV.get<string[]>(SUB_INDEX_KEY, "json")) ?? [];
+
+// ---------- Subscriber store (single-blob design) ----------
+// All subscribers live in one KV value: Record<endpoint, SubscriberRecord>.
+// This means every cron tick costs exactly 3 reads (schedule×2 + blob) and
+// at most 1 write, regardless of subscriber count.
+
+// getAllSubs reads the single blob, merging any legacy per-user keys that are
+// not yet present. Uses a separate flag key ("subs:migrated") so the merge
+// runs exactly once — even if subs:all already exists with partial data.
+async function getAllSubs(env: Env): Promise<Record<string, SubscriberRecord>> {
+  const [existing, migrationDone] = await Promise.all([
+    env.EPGP_KV.get<Record<string, SubscriberRecord>>(SUBS_ALL_KEY, "json"),
+    env.EPGP_KV.get(LEGACY_MIGRATION_FLAG),
+  ]);
+
+  const subs: Record<string, SubscriberRecord> = existing ?? {};
+
+  if (migrationDone === null) {
+    // Migration not yet confirmed — check for legacy data and merge any
+    // endpoints missing from the blob (handles partial earlier migrations).
+    const legacyIndex = await env.EPGP_KV.get<string[]>(
+      LEGACY_SUB_INDEX_KEY,
+      "json",
+    );
+    if (legacyIndex && legacyIndex.length > 0) {
+      let mergedCount = 0;
+      for (const endpoint of legacyIndex) {
+        if (subs[endpoint]) continue; // already present, keep newer version
+        const rec = await env.EPGP_KV.get<SubscriberRecord>(
+          legacySubKey(endpoint),
+          "json",
+        );
+        if (rec?.subscription?.endpoint) {
+          subs[endpoint] = rec;
+          mergedCount++;
+        }
+      }
+      if (mergedCount > 0) {
+        console.log(`Merged ${mergedCount} legacy subscriber records into subs:all.`);
+        await putAllSubs(env, subs);
+      }
+    }
+    // Mark migration complete so this never runs again.
+    await env.EPGP_KV.put(LEGACY_MIGRATION_FLAG, "1");
+  }
+
+  return subs;
 }
-async function saveIndex(env: Env, idx: string[]) {
-  await env.EPGP_KV.put(SUB_INDEX_KEY, JSON.stringify(idx));
-}
-async function getSubscriber(
+
+async function putAllSubs(
   env: Env,
-  endpoint: string,
-): Promise<SubscriberRecord | null> {
-  return env.EPGP_KV.get<SubscriberRecord>(subKey(endpoint), "json");
+  subs: Record<string, SubscriberRecord>,
+): Promise<void> {
+  await env.EPGP_KV.put(SUBS_ALL_KEY, JSON.stringify(subs));
 }
-async function putSubscriber(env: Env, rec: SubscriberRecord) {
-  await env.EPGP_KV.put(subKey(rec.subscription.endpoint), JSON.stringify(rec));
+
+// Prune sent keys for dates strictly before today to keep the blob small.
+function pruneSentKeys(rec: SubscriberRecord, todayISO: string): boolean {
+  const before = Object.keys(rec.sent).length;
+  for (const key of Object.keys(rec.sent)) {
+    // sent keys contain a date segment like "2026-06-14"; extract and compare.
+    const dateMatch = key.match(/(\d{4}-\d{2}-\d{2})/);
+    if (dateMatch && dateMatch[1]! < todayISO) {
+      delete rec.sent[key];
+    }
+  }
+  return Object.keys(rec.sent).length !== before;
 }
-async function deleteSubscriber(env: Env, endpoint: string) {
-  await env.EPGP_KV.delete(subKey(endpoint));
-  const idx = await getIndex(env);
-  const next = idx.filter((e) => e !== endpoint);
-  if (next.length !== idx.length) await saveIndex(env, next);
-}
+
 async function getSubscriberStats(
   env: Env,
 ): Promise<{ activeSubscribers: number }> {
-  const idx = await getIndex(env);
-  const unique = Array.from(new Set(idx));
-  let activeSubscribers = 0;
-  const validEndpoints: string[] = [];
-
-  for (const endpoint of unique) {
-    const rec = await getSubscriber(env, endpoint);
-    if (!rec?.subscription?.endpoint) continue;
-    activeSubscribers += 1;
-    validEndpoints.push(endpoint);
-  }
-
-  if (
-    validEndpoints.length !== idx.length ||
-    validEndpoints.some((endpoint, index) => endpoint !== idx[index])
-  ) {
-    await saveIndex(env, validEndpoints);
-  }
-
-  return { activeSubscribers };
+  const subs = await getAllSubs(env);
+  return { activeSubscribers: Object.keys(subs).length };
 }
+
 async function upsertSubscription(
   env: Env,
   sub: PushSubscriptionJSON,
 ): Promise<SubscriberRecord> {
-  let rec = await getSubscriber(env, sub.endpoint);
+  const subs = await getAllSubs(env);
+  let rec = subs[sub.endpoint];
   if (!rec) {
     rec = {
       subscription: sub,
@@ -483,24 +528,38 @@ async function upsertSubscription(
       sent: {},
       updatedAt: new Date().toISOString(),
     };
-    const idx = await getIndex(env);
-    if (!idx.includes(sub.endpoint)) {
-      idx.push(sub.endpoint);
-      await saveIndex(env, idx);
-    }
   } else {
     rec.subscription = sub;
     rec.updatedAt = new Date().toISOString();
   }
-  await putSubscriber(env, rec);
+  subs[sub.endpoint] = rec;
+  await putAllSubs(env, subs);
   return rec;
 }
 
+async function deleteSubscriber(env: Env, endpoint: string): Promise<void> {
+  const subs = await getAllSubs(env);
+  if (endpoint in subs) {
+    delete subs[endpoint];
+    await putAllSubs(env, subs);
+  }
+}
+
+async function getSubscriber(
+  env: Env,
+  endpoint: string,
+): Promise<SubscriberRecord | null> {
+  const subs = await getAllSubs(env);
+  return subs[endpoint] ?? null;
+}
+
+async function putSubscriber(env: Env, rec: SubscriberRecord): Promise<void> {
+  const subs = await getAllSubs(env);
+  subs[rec.subscription.endpoint] = rec;
+  await putAllSubs(env, subs);
+}
+
 // ---------- VAPID key import ----------
-// VAPID keys from the standard `web-push` tooling are base64url:
-//   publicKey: 65-byte uncompressed P-256 point (0x04 || X || Y)
-//   privateKey: 32-byte raw scalar
-// We convert them to CryptoKeys via JWK so we can construct ApplicationServerKeys directly.
 function b64urlToUint8(s: string): Uint8Array {
   const padded =
     s.replace(/-/g, "+").replace(/_/g, "/") +
@@ -586,14 +645,13 @@ function recordPushFailure(
 }
 
 function toFetchBody(body: ArrayBuffer | ArrayBufferView): ArrayBuffer {
-  // webpush-webcrypto returns an ArrayBuffer in Worker/Node runtimes, while
-  // older assumptions treated the encrypted payload as an ArrayBufferView.
   if (body instanceof ArrayBuffer) return body;
   const copy = new Uint8Array(body.byteLength);
   copy.set(new Uint8Array(body.buffer, body.byteOffset, body.byteLength));
   return copy.buffer;
 }
 
+// sendPush operates on an in-memory rec; callers are responsible for persisting.
 async function sendPush(
   env: Env,
   rec: SubscriberRecord,
@@ -624,7 +682,6 @@ async function sendPush(
     });
     if (res.status === 404 || res.status === 410) {
       recordPushFailure(rec, res.status, "Subscription expired or was revoked");
-      await deleteSubscriber(env, rec.subscription.endpoint);
       return {
         ok: false,
         purged: true,
@@ -649,6 +706,8 @@ async function sendPush(
 }
 
 // ---------- Cron evaluator ----------
+// KV budget per tick: 3 reads (schedule:date, schedule:cache, subs:all)
+//                   + 0–1 writes (subs:all, only when something changed)
 async function evaluateAll(env: Env) {
   const data = await getSchedule(env).catch(() => null);
   if (!data) {
@@ -660,18 +719,21 @@ async function evaluateAll(env: Env) {
   const timeZone = appTimeZone(env);
   const { isoDate: todayISO, minutes: currentMins } = zonedParts(now, timeZone);
 
-  // Find today's schedule entry once in the same time zone users see in the app.
   const todaySched = data.schedule.find(
     (d) => scheduleDateToISO(d.date) === todayISO,
   );
 
-  for (const endpoint of await getIndex(env)) {
-    const rec = await getSubscriber(env, endpoint);
-    if (!rec) continue;
+  // Single KV read for ALL subscribers.
+  const allSubs = await getAllSubs(env);
+  let blobMutated = false;
 
-    let mutated = false;
+  for (const [endpoint, rec] of Object.entries(allSubs)) {
+    let recMutated = false;
 
-    // Auto-expire reminders whose subjects' last occurrence has passed
+    // Prune old sent keys to keep blob lean.
+    if (pruneSentKeys(rec, todayISO)) recMutated = true;
+
+    // Auto-expire reminders whose subjects' last occurrence has passed.
     const survivors: Reminder[] = [];
     for (const r of rec.reminders) {
       let last: string | null = null;
@@ -681,31 +743,31 @@ async function evaluateAll(env: Env) {
         if (!d) continue;
         if (!last || d > last) last = d;
       }
-      if (!last) {
-        mutated = true;
-        continue;
-      }
-      if (todayISO > last) {
-        mutated = true;
+      if (!last || todayISO > last) {
+        recMutated = true;
         continue;
       }
       survivors.push(r);
     }
-    if (mutated) rec.reminders = survivors;
+    if (recMutated) rec.reminders = survivors;
 
     if (!todaySched) {
-      if (mutated) await putSubscriber(env, rec);
+      if (recMutated) blobMutated = true;
       continue;
     }
 
+    let purged = false;
+
     for (const r of rec.reminders) {
+      if (purged) break;
       const matched = todaySched.sessions.filter((s) =>
         r.subjects.includes(s.subject),
       );
       if (matched.length === 0) continue;
 
-      // Fixed slot reminders (5-minute tolerance handles delayed cron runs; sent keys prevent duplicates)
+      // Fixed slot reminders
       for (const slot of r.times) {
+        if (purged) break;
         const [hStr, mStr] = slot.split(":");
         if (!hStr || !mStr) continue;
         const slotMins = parseInt(hStr) * 60 + parseInt(mStr);
@@ -724,19 +786,19 @@ async function evaluateAll(env: Env) {
           ...(rec.diagnostics ?? {}),
           lastMatchedReminderAt: new Date().toISOString(),
         };
-        mutated = true;
-        if (ok.ok) {
-          rec.sent[key] = true;
-        } else if (ok.purged || !(await getSubscriber(env, endpoint))) {
-          // Subscriber was just purged by 410 handler; bail
-          mutated = false;
+        recMutated = true;
+        if (ok.purged) {
+          delete allSubs[endpoint];
+          purged = true;
           break;
         }
+        if (ok.ok) rec.sent[key] = true;
       }
 
       // Pre-class nudge (15 min before each matched session)
-      if (r.preClassNudge) {
+      if (!purged && r.preClassNudge) {
         for (const sess of matched) {
+          if (purged) break;
           const startMins = parseStartMinutes(sess.time);
           if (startMins === null) continue;
           const target = startMins - 15;
@@ -753,22 +815,23 @@ async function evaluateAll(env: Env) {
             ...(rec.diagnostics ?? {}),
             lastMatchedReminderAt: new Date().toISOString(),
           };
-          mutated = true;
-          if (ok.ok) {
-            rec.sent[key] = true;
-          } else if (ok.purged || !(await getSubscriber(env, endpoint))) {
-            mutated = false;
+          recMutated = true;
+          if (ok.purged) {
+            delete allSubs[endpoint];
+            purged = true;
             break;
           }
+          if (ok.ok) rec.sent[key] = true;
         }
       }
     }
 
-    if (mutated) {
-      // Re-check existence in case the record was purged mid-iteration
-      const stillExists = await getSubscriber(env, endpoint);
-      if (stillExists) await putSubscriber(env, rec);
-    }
+    if (recMutated && !purged) blobMutated = true;
+  }
+
+  // Single KV write for ALL subscribers — only if something actually changed.
+  if (blobMutated) {
+    await putAllSubs(env, allSubs);
   }
 }
 
@@ -794,7 +857,6 @@ async function handle(
     if ("error" in data) return errResp(data.error, 500);
     return json(data);
   }
-
 
   if (p === "/api/calendar/live.ics" && method === "GET") {
     const subjectsParam = url.searchParams.get("subjects") ?? "";
@@ -869,9 +931,11 @@ async function handle(
       },
       "test",
     );
-    if (!result.purged && (await getSubscriber(env, body.endpoint))) {
+    if (!result.purged) {
       rec.updatedAt = new Date().toISOString();
       await putSubscriber(env, rec);
+    } else {
+      await deleteSubscriber(env, body.endpoint);
     }
     return json({
       ok: result.ok,
