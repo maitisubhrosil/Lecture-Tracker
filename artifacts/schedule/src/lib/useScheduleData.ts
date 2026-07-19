@@ -28,27 +28,19 @@ const API_BASE: string = normalizeApiBase(
 );
 const API_URL = `${API_BASE}/api/schedule`;
 const CACHE_KEY = "epgp_schedule_data";
-const CACHE_DATE_KEY = "epgp_schedule_date";
-
-function todayStr() {
-  return new Date().toISOString().split("T")[0];
-}
+const CACHE_TIMESTAMP_KEY = "epgp_schedule_timestamp";
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 function isCacheFresh(): boolean {
-  const cachedDate = localStorage.getItem(CACHE_DATE_KEY);
-  if (!cachedDate) return false;
-  const now = new Date();
-  if (cachedDate !== todayStr()) {
-    const totalMins = now.getHours() * 60 + now.getMinutes();
-    if (totalMins >= 5 * 60 + 30) return false;
-  }
-  return true;
+  const ts = localStorage.getItem(CACHE_TIMESTAMP_KEY);
+  if (!ts) return false;
+  return Date.now() - Number(ts) < CACHE_TTL_MS;
 }
 
 function saveCache(data: ScheduleData) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(data));
-    localStorage.setItem(CACHE_DATE_KEY, todayStr());
+    localStorage.setItem(CACHE_TIMESTAMP_KEY, String(Date.now()));
   } catch {}
 }
 

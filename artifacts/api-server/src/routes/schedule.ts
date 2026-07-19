@@ -28,6 +28,8 @@ export type { ScheduleData };
 
 let cachedData: ScheduleData | null = null;
 let lastFetchDate: string | null = null;
+let lastFetchTimestamp: number = 0;
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 export function getCachedSchedule(): ScheduleData | null {
   return cachedData;
@@ -187,12 +189,8 @@ function todayStr(): string {
 
 function shouldRefetch(): boolean {
   if (!cachedData || !lastFetchDate) return true;
-  const now = new Date();
-  if (lastFetchDate !== todayStr()) {
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
-    if (hours > 5 || (hours === 5 && minutes >= 30)) return true;
-  }
+  // Re-fetch if cache is older than TTL
+  if (Date.now() - lastFetchTimestamp > CACHE_TTL_MS) return true;
   return false;
 }
 
@@ -209,6 +207,7 @@ async function fetchSchedule(): Promise<ScheduleData> {
 
   cachedData = data;
   lastFetchDate = todayStr();
+  lastFetchTimestamp = Date.now();
 
   return data;
 }
