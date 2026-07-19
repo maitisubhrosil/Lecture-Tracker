@@ -99,6 +99,7 @@ const legacySubKey = (endpoint: string) => `sub:${endpoint}`;
 
 const SCHEDULE_CACHE_KEY = "schedule:cache";
 const SCHEDULE_DATE_KEY = "schedule:date";
+const SCHEDULE_TTL_MS = 2 * 60 * 60 * 1000; // re-fetch from Sheet every 2 hours
 const CRON_TOLERANCE_MINUTES = 6;
 
 // ---------- Utilities ----------
@@ -343,10 +344,10 @@ function parseSchedule(csvText: string): ScheduleData {
 }
 
 async function getSchedule(env: Env, force = false): Promise<ScheduleData> {
-  const today = todayUTCISO();
   if (!force) {
-    const date = await env.EPGP_KV.get(SCHEDULE_DATE_KEY);
-    if (date === today) {
+    const fetchedAt = await env.EPGP_KV.get(SCHEDULE_DATE_KEY);
+    const age = fetchedAt ? Date.now() - Number(fetchedAt) : Infinity;
+    if (age < SCHEDULE_TTL_MS) {
       const cached = await env.EPGP_KV.get<ScheduleData>(
         SCHEDULE_CACHE_KEY,
         "json",
@@ -358,7 +359,7 @@ async function getSchedule(env: Env, force = false): Promise<ScheduleData> {
   if (!res.ok) throw new Error(`sheet fetch ${res.status}`);
   const data = parseSchedule(await res.text());
   await env.EPGP_KV.put(SCHEDULE_CACHE_KEY, JSON.stringify(data));
-  await env.EPGP_KV.put(SCHEDULE_DATE_KEY, today);
+  await env.EPGP_KV.put(SCHEDULE_DATE_KEY, String(Date.now()));
   return data;
 }
 
