@@ -53,6 +53,30 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // index.html is served network-first so users always get the latest version
+  // after a new deploy, without needing to manually clear cache.
+  // All other assets (JS/CSS) are content-hashed by Vite so cache-first is safe.
+  const isHtmlNav =
+    url.pathname === self.registration.scope.replace(/\/$/, "") ||
+    url.pathname === self.registration.scope ||
+    url.pathname.endsWith("/") ||
+    url.pathname.endsWith(".html");
+
+  if (isHtmlNav) {
+    event.respondWith(
+      fetch(event.request)
+        .then((res) => {
+          if (res && res.status === 200) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

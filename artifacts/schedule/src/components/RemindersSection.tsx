@@ -387,15 +387,24 @@ export default function RemindersSection({
     setError(null);
     setRefreshingCache(true);
     try {
-      if ("serviceWorker" in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map((reg) => reg.unregister()));
-      }
+      // Only clear the schedule data cache — NOT the service worker registration
+      // and NOT the push endpoint. Unregistering the SW would destroy the push
+      // subscription and cause users to lose all their reminders.
       if ("caches" in window) {
         const keys = await caches.keys();
-        await Promise.all(keys.map((key) => caches.delete(key)));
+        await Promise.all(
+          keys
+            .filter((k) => k !== "epgp-schedule-v2")
+            .map((key) => caches.delete(key)),
+        );
+        // Also clear the HTML entry from the app cache so the latest UI loads.
+        const appCache = await caches.open("epgp-schedule-v2");
+        await appCache.delete("./");
+        await appCache.delete("./index.html");
       }
-      localStorage.removeItem("epgp_push_endpoint");
+      localStorage.removeItem("epgp_schedule_data");
+      localStorage.removeItem("epgp_schedule_date");
+      localStorage.removeItem("epgp_schedule_timestamp");
       sessionStorage.clear();
       window.location.reload();
     } catch {
