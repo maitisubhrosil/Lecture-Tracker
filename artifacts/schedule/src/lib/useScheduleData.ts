@@ -20,6 +20,8 @@ export interface ScheduleData {
   lastFetched: string;
 }
 
+export type ScheduleDataSource = "live" | "browser-cache" | "bundled";
+
 const STATIC_JSON_URL = "./schedule-data.json";
 function normalizeApiBase(value: string | undefined): string {
   return (value ?? "").replace(/\/$/, "").replace(/\/api$/, "");
@@ -56,30 +58,53 @@ function loadCache(): ScheduleData | null {
   }
 }
 
+async function fetchLiveSchedule(): Promise<ScheduleData | null> {
+  try {
+    const res = await fetch(API_URL);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export function useScheduleData() {
   const [data, setData] = useState<ScheduleData | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState(false);
+  const [dataSource, setDataSource] = useState<
+    ScheduleDataSource | undefined
+  >(undefined);
+  const [liveUnavailable, setLiveUnavailable] = useState(false);
 
   const fetchData = useCallback(async (force = false) => {
     setIsLoading(true);
     setIsError(false);
+    setLiveUnavailable(false);
 
     if (!force && isCacheFresh()) {
       const cached = loadCache();
       if (cached) {
         setData(cached);
+        setDataSource("browser-cache");
         setIsLoading(false);
+
+        // Keep the fast cache-first render, but still check the live endpoint
+        // so the user is warned when the stored data is all that is available.
+        const live = await fetchLiveSchedule();
+        if (live) {
+          saveCache(live);
+          setData(live);
+          setDataSource("live");
+        } else {
+          setLiveUnavailable(true);
+        }
         return;
       }
     }
 
-    let result: ScheduleData | null = null;
-
-    try {
-      const res = await fetch(API_URL);
-      if (res.ok) result = await res.json();
-    } catch {}
+    const liveResult = await fetchLiveSchedule();
+    let result = liveResult;
 
     if (!result) {
       try {
@@ -91,6 +116,8 @@ export function useScheduleData() {
     if (result) {
       saveCache(result);
       setData(result);
+      setDataSource(liveResult ? "live" : "bundled");
+      setLiveUnavailable(!liveResult);
       setIsLoading(false);
       return;
     }
@@ -98,10 +125,13 @@ export function useScheduleData() {
     const stale = loadCache();
     if (stale) {
       setData(stale);
+      setDataSource("browser-cache");
+      setLiveUnavailable(true);
       setIsLoading(false);
       return;
     }
 
+    setLiveUnavailable(true);
     setIsError(true);
     setIsLoading(false);
   }, []);
@@ -110,5 +140,12 @@ export function useScheduleData() {
     fetchData();
   }, [fetchData]);
 
-  return { data, isLoading, isError, refetch: () => fetchData(true) };
+  return {
+    data,
+    isLoading,
+    isError,
+    dataSource,
+    liveUnavailable,
+    refetch: () => fetchData(true),
+  };
 }

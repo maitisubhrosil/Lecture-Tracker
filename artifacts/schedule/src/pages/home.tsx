@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   useScheduleData,
   type ScheduleData,
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import RemindersSection from "@/components/RemindersSection";
 import { usePushStats } from "@/lib/usePushReminders";
+import { useToast } from "@/hooks/use-toast";
 
 const SUBJECT_COLORS: Record<
   string,
@@ -184,8 +185,17 @@ function isSameCalendarDay(a: Date, b: Date) {
 }
 
 export default function Home() {
-  const { data, isLoading, isError, refetch } = useScheduleData();
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    dataSource,
+    liveUnavailable,
+  } = useScheduleData();
   const { activeSubscribers } = usePushStats();
+  const { toast } = useToast();
+  const hasShownDataWarning = useRef(false);
 
   const [selectedSubjects, setSelectedSubjects] = useState<Set<string>>(
     new Set(),
@@ -261,6 +271,25 @@ export default function Home() {
       ),
     [allSubjects, data],
   );
+
+  useEffect(() => {
+    if (!liveUnavailable || hasShownDataWarning.current) return;
+    hasShownDataWarning.current = true;
+
+    const description =
+      dataSource === "browser-cache"
+        ? "The live sheet could not be reached. Showing saved schedule data from this browser, which may be out of date."
+        : dataSource === "bundled"
+          ? "The live sheet could not be reached. Showing the stored schedule data bundled with the app, which may be out of date."
+          : "The live sheet could not be reached and no stored schedule data is available.";
+
+    toast({
+      title: "Live schedule unavailable",
+      description,
+      duration: 9000,
+      className: "border-amber-200 bg-amber-50 text-amber-950",
+    });
+  }, [dataSource, liveUnavailable, toast]);
 
   if (isError) {
     return (
