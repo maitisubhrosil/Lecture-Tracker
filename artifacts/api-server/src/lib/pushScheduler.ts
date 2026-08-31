@@ -18,7 +18,7 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
 }
 
 // ---- Schedule lookup (uses cached schedule fetched by routes/schedule.ts) ----
-interface Session { slot: number; time: string; subject: string }
+interface Session { slot: number; time: string; subject: string; subjectName?: string }
 interface DaySchedule { date: string; day: string; week: string; sessions: Session[] }
 
 // Re-use the cached schedule by importing the fetch function lazily
@@ -26,10 +26,13 @@ import type { ScheduleData } from "../routes/schedule.js";
 import { getCachedSchedule } from "../routes/schedule.js";
 
 function parseScheduleDateStr(dateStr: string): Date | null {
-  const parts = dateStr.split("-");
-  if (parts.length !== 3) return null;
-  const [day, month, yearShort] = parts;
-  const d = new Date(`${day} ${month} 20${yearShort}`);
+  const parts = dateStr.split("-").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2 || parts.length > 3) return null;
+  const [day, month, yearRaw] = parts;
+  const yearValue = yearRaw ? Number(yearRaw) : new Date().getFullYear();
+  if (!Number.isInteger(yearValue)) return null;
+  const year = yearValue < 100 ? 2000 + yearValue : yearValue;
+  const d = new Date(`${day} ${month} ${year}`);
   return isNaN(d.getTime()) ? null : d;
 }
 
@@ -114,8 +117,10 @@ async function evaluateReminder(rec: SubscriberRecord, reminder: Reminder, sched
     const key = `${reminder.id}|${todayISO}|${slot}`;
     if (rec.sent[key]) continue;
 
-    const title = `📚 Reminder: ${reminder.subjects.join(", ")}`;
-    const body = matchedSessions.map(s => `S${s.slot} · ${s.time} · ${s.subject}`).join("\n");
+    const title = `📚 Reminder: ${reminder.subjects
+      .map(subject => todaySched.sessions.find(s => s.subject === subject)?.subjectName ?? subject)
+      .join(", ")}`;
+    const body = matchedSessions.map(s => `S${s.slot} · ${s.time} · ${s.subjectName ?? s.subject}`).join("\n");
     const ok = await sendPush(rec, { title, body, tag: key });
     if (ok) markSent(rec.subscription.endpoint, key);
   }
@@ -131,7 +136,7 @@ async function evaluateReminder(rec: SubscriberRecord, reminder: Reminder, sched
       const key = `preclass|${reminder.id}|${todayISO}|${sess.slot}|${sess.subject}`;
       if (rec.sent[key]) continue;
 
-      const title = `⏰ ${sess.subject} starts in 15 min`;
+      const title = `⏰ ${sess.subjectName ?? sess.subject} starts in 15 min`;
       const body = `Slot S${sess.slot} · ${sess.time}`;
       const ok = await sendPush(rec, { title, body, tag: key });
       if (ok) markSent(rec.subscription.endpoint, key);

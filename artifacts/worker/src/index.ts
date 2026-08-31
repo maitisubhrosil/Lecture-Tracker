@@ -49,6 +49,7 @@ interface Session {
   slot: number;
   time: string;
   subject: string;
+  subjectName?: string;
 }
 interface DaySchedule {
   date: string;
@@ -180,15 +181,16 @@ function zonedParts(
 }
 
 function scheduleDateToISO(dateStr: string): string | null {
-  const parts = dateStr.split("-");
-  if (parts.length !== 3) return null;
+  const parts = dateStr.split("-").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2 || parts.length > 3) return null;
   const [dayRaw, monthRaw, yearRaw] = parts;
   const month = MONTHS[monthRaw!.trim().toLowerCase()];
   if (!month) return null;
   const day = Number(dayRaw);
-  const yearShort = Number(yearRaw);
-  if (!Number.isInteger(day) || !Number.isInteger(yearShort)) return null;
-  const year = yearShort < 100 ? 2000 + yearShort : yearShort;
+  if (!Number.isInteger(day)) return null;
+  const yearValue = yearRaw ? Number(yearRaw) : new Date().getFullYear();
+  if (!Number.isInteger(yearValue)) return null;
+  const year = yearValue < 100 ? 2000 + yearValue : yearValue;
   return `${year}-${month}-${String(day).padStart(2, "0")}`;
 }
 
@@ -240,59 +242,79 @@ function parseCSV(text: string): string[][] {
 
 function parseSchedule(csvText: string): ScheduleData {
   const rows = parseCSV(csvText);
-  let campusTimes: string[] = [];
-  let weekdayTimes: string[] = [];
-  let weekendTimes: string[] = [];
+  const headerRow = rows.find((row) => {
+    const values = row.map((cell) => cell.trim().toLowerCase());
+    return (
+      values.includes("date") &&
+      values.includes("day") &&
+      values.some((value) => /^session\s*1$/.test(value))
+    );
+  });
+  const dateColumn = headerRow
+    ? headerRow.findIndex((cell) => cell.trim().toLowerCase() === "date")
+    : 1;
+  const dayColumn = headerRow
+    ? headerRow.findIndex((cell) => cell.trim().toLowerCase() === "day")
+    : 2;
+  const sessionColumns = Array.from({ length: 5 }, (_, index) => {
+    const expected = new RegExp(`^session\\s*${index + 1}$`, "i");
+    return headerRow
+      ? headerRow.findIndex((cell) => expected.test(cell.trim()))
+      : 4 + index;
+  });
 
-  if (rows[5]) {
-    campusTimes = [
-      rows[5][4] || "09:00 AM-10:30 AM",
-      rows[5][5] || "11:15 AM-12:45 PM",
-      rows[5][6] || "02:00 PM-03:30 PM",
-      rows[5][7] || "03:45 PM-05:15 PM",
-      rows[5][8] || "05:30 PM-07:00 PM",
-    ];
-  } else {
-    campusTimes = [
-      "09:00 AM-10:30 AM",
-      "11:15 AM-12:45 PM",
-      "02:00 PM-03:30 PM",
-      "03:45 PM-05:15 PM",
-      "05:30 PM-07:00 PM",
-    ];
-  }
+  const timingRow = (kind: "weekday" | "weekend" | "campus") =>
+    rows.find((row) => {
+      const text = row.join(" ").toLowerCase();
+      if (kind === "weekend")
+        return text.includes("weekend") || text.includes("sat & sun") || text.includes("sat-sun");
+      if (kind === "weekday")
+        return text.includes("weekday") || text.includes("mon - fri") || text.includes("mon-friday");
+      return text.includes("campus") && !text.includes("weekend");
+    });
+  const readTimes = (row: string[] | undefined, fallback: string[]) =>
+    sessionColumns.map((column, index) => row?.[column] || fallback[index] || "");
+  const campusTimes = readTimes(timingRow("campus"), [
+    "09:00 AM-10:30 AM",
+    "11:15 AM-12:45 PM",
+    "02:00 PM-03:30 PM",
+    "03:45 PM-05:15 PM",
+    "05:30 PM-07:00 PM",
+  ]);
+  const weekdayTimes = readTimes(timingRow("weekday"), [
+    "",
+    "",
+    "",
+    "07:30 PM-09:00 PM",
+    "09:15 PM-10:45 PM",
+  ]);
+  const weekendTimes = readTimes(timingRow("weekend"), [
+    "10:00 AM-11:30 AM",
+    "11:45 AM-01:15 PM",
+    "03:00 PM-04:30 PM",
+    "04:45 PM-06:15 PM",
+    "06:30 PM-08:00 PM",
+  ]);
 
-  for (const row of rows) {
-    const label = (row[2] || "").toLowerCase();
-    if (label.includes("mon-friday") || label.includes("weekday")) {
-      weekdayTimes = [
-        "",
-        "",
-        "",
-        row[7] || "07:30 PM-09:00 PM",
-        row[8] || "09:15 PM-10:45 PM",
-      ];
-    }
-    if (label.includes("sat-sun") || label.includes("weekend")) {
-      weekendTimes = [
-        row[4] || "10:00 AM-11:30 AM",
-        row[5] || "11:45 AM-01:15 PM",
-        row[6] || "03:00 PM-04:30 PM",
-        row[7] || "04:45 PM-06:15 PM",
-        row[8] || "06:30 PM-08:00 PM",
-      ];
+  const mappingRow = rows.find((row) => {
+    const values = row.map((cell) => cell.trim().toLowerCase());
+    return values.includes("course code") && values.includes("subject name");
+  });
+  const courseCodeColumn = mappingRow
+    ? mappingRow.findIndex((cell) => cell.trim().toLowerCase() === "course code")
+    : -1;
+  const subjectNameColumn = mappingRow
+    ? mappingRow.findIndex((cell) => cell.trim().toLowerCase() === "subject name")
+    : -1;
+  const subjectNames = new Map<string, string>();
+  if (courseCodeColumn >= 0 && subjectNameColumn >= 0) {
+    for (const row of rows) {
+      const code = row[courseCodeColumn]?.trim();
+      const name = row[subjectNameColumn]?.trim();
+      if (code && name && code.toUpperCase() !== "TOTAL")
+        subjectNames.set(code, name);
     }
   }
-  if (weekdayTimes.length === 0)
-    weekdayTimes = ["", "", "", "07:30 PM-09:00 PM", "09:15 PM-10:45 PM"];
-  if (weekendTimes.length === 0)
-    weekendTimes = [
-      "10:00 AM-11:30 AM",
-      "11:45 AM-01:15 PM",
-      "03:00 PM-04:30 PM",
-      "04:45 PM-06:15 PM",
-      "06:30 PM-08:00 PM",
-    ];
 
   const EXCLUDED = new Set([
     "Buffer slot",
@@ -306,26 +328,38 @@ function parseSchedule(csvText: string): ScheduleData {
   const subjectsSet = new Set<string>();
   let currentWeek = "";
   for (const row of rows) {
-    const dateStr = row[1];
-    if (!dateStr || !/\d{2}-[A-Za-z]+-\d{2}/.test(dateStr)) continue;
+    const dateStr = row[dateColumn];
+    if (!dateStr || !scheduleDateToISO(dateStr)) continue;
     const weekCol = row[0];
-    const dayCol = row[2];
+    const dayCol = row[dayColumn];
     if (weekCol && weekCol.startsWith("Week")) currentWeek = weekCol;
     if (!dayCol || dayCol === "Day") continue;
     const isWeekend = dayCol === "Saturday" || dayCol === "Sunday";
-    const hasCampusSessions = !!(row[4] || row[5] || row[6]);
+    const hasCampusSessions = !!sessionColumns
+      .slice(0, 3)
+      .some((column) => row[column]);
     const times = isWeekend
       ? weekendTimes
-      : hasCampusSessions
+      : hasCampusSessions && timingRow("campus")
         ? campusTimes
         : weekdayTimes;
     const sessions: Session[] = [];
     for (let i = 0; i < 5; i++) {
-      const subject = (row[4 + i] || "").trim();
+      const subject = (row[sessionColumns[i]!] || "").trim();
       const time = times[i] || "";
-      if (subject && time && !EXCLUDED.has(subject)) {
+      if (
+        subject &&
+        time &&
+        !EXCLUDED.has(subject) &&
+        !/holiday/i.test(subject)
+      ) {
         subjectsSet.add(subject);
-        sessions.push({ slot: i + 1, time, subject });
+        sessions.push({
+          slot: i + 1,
+          time,
+          subject,
+          subjectName: subjectNames.get(subject),
+        });
       }
     }
     if (sessions.length > 0)
@@ -430,7 +464,7 @@ function buildCalendarSubscriptionIcs(data: ScheduleData, subjects: string[], sl
         `live-class-${day.date}-${sess.slot}-${sess.subject}`,
         start,
         end,
-        `ePGP: ${sess.subject}`,
+        `ePGP: ${sess.subjectName ?? sess.subject}`,
         `${day.day} ${day.date} · ${day.week}\nSlot S${sess.slot} · ${sess.time}`,
         includePreClass ? 15 : undefined,
       );
@@ -706,6 +740,14 @@ async function sendPush(
   }
 }
 
+function subjectLabel(data: ScheduleData, subject: string): string {
+  for (const day of data.schedule) {
+    const session = day.sessions.find((item) => item.subject === subject);
+    if (session?.subjectName) return session.subjectName;
+  }
+  return subject;
+}
+
 // ---------- Cron evaluator ----------
 // KV budget per tick: 3 reads (schedule:date, schedule:cache, subs:all)
 //                   + 0–1 writes (subs:all, only when something changed)
@@ -777,9 +819,14 @@ async function evaluateAll(env: Env) {
         const key = `${r.id}|${todayISO}|${slot}`;
         if (rec.sent[key]) continue;
         const ok = await sendPush(env, rec, {
-          title: `📚 Reminder: ${r.subjects.join(", ")}`,
+          title: `📚 Reminder: ${r.subjects
+            .map((subject) => subjectLabel(data, subject))
+            .join(", ")}`,
           body: matched
-            .map((s) => `S${s.slot} · ${s.time} · ${s.subject}`)
+            .map(
+              (s) =>
+                `S${s.slot} · ${s.time} · ${s.subjectName ?? s.subject}`,
+            )
             .join("\n"),
           tag: key,
         });
@@ -808,8 +855,10 @@ async function evaluateAll(env: Env) {
           const key = `preclass|${r.id}|${todayISO}|${sess.slot}|${sess.subject}`;
           if (rec.sent[key]) continue;
           const ok = await sendPush(env, rec, {
-            title: `⏰ ${sess.subject} starts in 15 min`,
-            body: `Slot S${sess.slot} · ${sess.time}`,
+            title: `⏰ ${subjectLabel(data, sess.subject)} starts in 15 min`,
+            body: `Slot S${sess.slot} · ${sess.time} · ${
+              sess.subjectName ?? sess.subject
+            }`,
             tag: key,
           });
           rec.diagnostics = {

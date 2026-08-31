@@ -1,5 +1,8 @@
 import { useState, useMemo } from "react";
-import { useScheduleData } from "@/lib/useScheduleData";
+import {
+  useScheduleData,
+  type ScheduleData,
+} from "@/lib/useScheduleData";
 import { BellRing, Clock, HelpCircle, RefreshCw, Users } from "lucide-react";
 
 const HELP_DOC_URL =
@@ -136,11 +139,25 @@ function getSubjectColor(subject: string, allSubjects: string[]) {
   return FALLBACK_COLORS[idx];
 }
 
+function getSubjectName(
+  subject: string,
+  schedule: ScheduleData | undefined,
+): string {
+  for (const day of schedule?.schedule ?? []) {
+    const session = day.sessions.find((item) => item.subject === subject);
+    if (session?.subjectName) return session.subjectName;
+  }
+  return subject;
+}
+
 function parseScheduleDate(dateStr: string): Date | null {
-  const parts = dateStr.split("-");
-  if (parts.length !== 3) return null;
-  const [day, month, yearShort] = parts;
-  const d = new Date(`${day} ${month} 20${yearShort}`);
+  const parts = dateStr.split("-").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2 || parts.length > 3) return null;
+  const [day, month, yearRaw] = parts;
+  const yearValue = yearRaw ? Number(yearRaw) : new Date().getFullYear();
+  if (!Number.isInteger(yearValue)) return null;
+  const year = yearValue < 100 ? 2000 + yearValue : yearValue;
+  const d = new Date(`${day} ${month} ${year}`);
   return isNaN(d.getTime()) ? null : d;
 }
 
@@ -237,6 +254,13 @@ export default function Home() {
   }, [upcomingSchedule, appliedSubjects]);
 
   const allSubjects = data?.subjects ?? [];
+  const subjectNames = useMemo(
+    () =>
+      Object.fromEntries(
+        allSubjects.map((subject) => [subject, getSubjectName(subject, data)]),
+      ),
+    [allSubjects, data],
+  );
 
   if (isError) {
     return (
@@ -338,7 +362,7 @@ export default function Home() {
                           : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
                       }`}
                     >
-                      {subject}
+                      {subjectNames[subject] ?? subject}
                     </button>
                   );
                 })}
@@ -491,7 +515,7 @@ export default function Home() {
                           <span
                             className={`text-sm font-bold px-3 py-1.5 rounded-xl border ${colors.card} ${colors.text} ${colors.border} shrink-0`}
                           >
-                            {session.subject}
+                            {session.subjectName ?? session.subject}
                           </span>
                         </div>
                       );

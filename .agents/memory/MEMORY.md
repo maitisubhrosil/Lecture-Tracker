@@ -1,0 +1,1 @@
+- [Live schedule sheet access](live-sheet-access.md) — production fetchers need a non-interactive, readable CSV source; never use personal credentials.

@@ -4,6 +4,7 @@ export interface Session {
   slot: number;
   time: string;
   subject: string;
+  subjectName?: string;
 }
 
 export interface DaySchedule {
@@ -27,7 +28,9 @@ const API_BASE: string = normalizeApiBase(
   import.meta.env.VITE_API_BASE_URL as string | undefined,
 );
 const API_URL = `${API_BASE}/api/schedule`;
-const CACHE_KEY = "epgp_schedule_data";
+// Bump once when the schedule shape/source changes so old-term browser data
+// cannot mask the newly fetched schedule during the normal cache window.
+const CACHE_KEY = "epgp_schedule_data_v2";
 const CACHE_TIMESTAMP_KEY = "epgp_schedule_timestamp";
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 

@@ -2,7 +2,7 @@ import { writeFileSync, mkdirSync } from "fs";
 import path from "path";
 
 const SHEET_CSV_URL =
-  "https://docs.google.com/spreadsheets/d/1VZauPSkJxNduZixiecFjoF0c0BmH7NNY6nBNNSnbJac/export?format=csv&gid=502725552";
+  "https://docs.google.com/spreadsheets/d/1ablAhqUS7PEHzyAZLuFnkg7dmdNe5II8/export?format=csv&gid=1928961668";
 
 const EXCLUDED_SUBJECTS = new Set([
   "Buffer slot",
@@ -16,6 +16,7 @@ interface Session {
   slot: number;
   time: string;
   subject: string;
+  subjectName?: string;
 }
 interface DaySchedule {
   date: string;
@@ -48,53 +49,102 @@ function parseCSV(text: string): string[][] {
 
 function parseSchedule(csvText: string): ScheduleData {
   const rows = parseCSV(csvText);
+  const headerRow = rows.find((row) => {
+    const values = row.map((cell) => cell.trim().toLowerCase());
+    return values.includes("date") && values.includes("day") &&
+      values.some((value) => /^session\s*1$/.test(value));
+  });
+  const dateColumn = headerRow
+    ? headerRow.findIndex((cell) => cell.trim().toLowerCase() === "date")
+    : 1;
+  const dayColumn = headerRow
+    ? headerRow.findIndex((cell) => cell.trim().toLowerCase() === "day")
+    : 2;
+  const sessionColumns = Array.from({ length: 5 }, (_, index) => {
+    const expected = new RegExp(`^session\\s*${index + 1}$`, "i");
+    return headerRow
+      ? headerRow.findIndex((cell) => expected.test(cell.trim()))
+      : 4 + index;
+  });
 
-  let campusTimes: string[] = rows[5]
-    ? [rows[5][4] || "09:00 AM-10:30 AM", rows[5][5] || "11:15 AM-12:45 PM",
-       rows[5][6] || "02:00 PM-03:30 PM", rows[5][7] || "03:45 PM-05:15 PM",
-       rows[5][8] || "05:30 PM-07:00 PM"]
-    : ["09:00 AM-10:30 AM", "11:15 AM-12:45 PM", "02:00 PM-03:30 PM", "03:45 PM-05:15 PM", "05:30 PM-07:00 PM"];
+  const timingRow = (kind: "weekday" | "weekend" | "campus") =>
+    rows.find((row) => {
+      const text = row.join(" ").toLowerCase();
+      if (kind === "weekend")
+        return text.includes("weekend") || text.includes("sat & sun") || text.includes("sat-sun");
+      if (kind === "weekday")
+        return text.includes("weekday") || text.includes("mon - fri") || text.includes("mon-friday");
+      return text.includes("campus") && !text.includes("weekend");
+    });
+  const readTimes = (row: string[] | undefined, fallback: string[]) =>
+    sessionColumns.map((column, index) => row?.[column] || fallback[index] || "");
+  const campusTimes = readTimes(timingRow("campus"), [
+    "09:00 AM-10:30 AM", "11:15 AM-12:45 PM", "02:00 PM-03:30 PM",
+    "03:45 PM-05:15 PM", "05:30 PM-07:00 PM",
+  ]);
+  const weekdayTimes = readTimes(timingRow("weekday"), [
+    "", "", "", "07:30 PM-09:00 PM", "09:15 PM-10:45 PM",
+  ]);
+  const weekendTimes = readTimes(timingRow("weekend"), [
+    "10:00 AM-11:30 AM", "11:45 AM-01:15 PM", "03:00 PM-04:30 PM",
+    "04:45 PM-06:15 PM", "06:30 PM-08:00 PM",
+  ]);
 
-  let weekdayTimes: string[] = [];
-  let weekendTimes: string[] = [];
-
-  for (const row of rows) {
-    const label = (row[2] || "").toLowerCase();
-    if (label.includes("mon-friday") || label.includes("weekday")) {
-      weekdayTimes = ["", "", "", row[7] || "07:30 PM-09:00 PM", row[8] || "09:15 PM-10:45 PM"];
-    }
-    if (label.includes("sat-sun") || label.includes("weekend")) {
-      weekendTimes = [row[4] || "10:00 AM-11:30 AM", row[5] || "11:45 AM-01:15 PM",
-        row[6] || "03:00 PM-04:30 PM", row[7] || "04:45 PM-06:15 PM", row[8] || "06:30 PM-08:00 PM"];
+  const mappingRow = rows.find((row) => {
+    const values = row.map((cell) => cell.trim().toLowerCase());
+    return values.includes("course code") && values.includes("subject name");
+  });
+  const courseCodeColumn = mappingRow
+    ? mappingRow.findIndex((cell) => cell.trim().toLowerCase() === "course code")
+    : -1;
+  const subjectNameColumn = mappingRow
+    ? mappingRow.findIndex((cell) => cell.trim().toLowerCase() === "subject name")
+    : -1;
+  const subjectNames = new Map<string, string>();
+  if (courseCodeColumn >= 0 && subjectNameColumn >= 0) {
+    for (const row of rows) {
+      const code = row[courseCodeColumn]?.trim();
+      const name = row[subjectNameColumn]?.trim();
+      if (code && name && code.toUpperCase() !== "TOTAL") subjectNames.set(code, name);
     }
   }
-
-  if (!weekdayTimes.length) weekdayTimes = ["", "", "", "07:30 PM-09:00 PM", "09:15 PM-10:45 PM"];
-  if (!weekendTimes.length) weekendTimes = ["10:00 AM-11:30 AM", "11:45 AM-01:15 PM",
-    "03:00 PM-04:30 PM", "04:45 PM-06:15 PM", "06:30 PM-08:00 PM"];
 
   const schedule: DaySchedule[] = [];
   const subjectsSet = new Set<string>();
   let currentWeek = "";
 
   for (const row of rows) {
-    const dateStr = row[1];
-    if (!dateStr || !/\d{2}-[A-Za-z]+-\d{2}/.test(dateStr)) continue;
+    const dateStr = row[dateColumn];
+    if (!dateStr || !/^\d{1,2}-[A-Za-z]+(?:-\d{2,4})?$/.test(dateStr.trim())) continue;
     if (row[0]?.startsWith("Week")) currentWeek = row[0];
-    const dayCol = row[2];
+    const dayCol = row[dayColumn];
     if (!dayCol || dayCol === "Day") continue;
 
     const isWeekend = dayCol === "Saturday" || dayCol === "Sunday";
-    const hasCampus = !!(row[4] || row[5] || row[6]);
-    const times = isWeekend ? weekendTimes : hasCampus ? campusTimes : weekdayTimes;
+    const hasCampus = sessionColumns.slice(0, 3).some((column) => row[column]);
+    const times = isWeekend
+      ? weekendTimes
+      : hasCampus && timingRow("campus")
+        ? campusTimes
+        : weekdayTimes;
 
     const sessions: Session[] = [];
     for (let i = 0; i < 5; i++) {
-      const subject = (row[4 + i] || "").trim();
+      const subject = (row[sessionColumns[i]!] || "").trim();
       const time = times[i] || "";
-      if (subject && time && !EXCLUDED_SUBJECTS.has(subject)) {
+      if (
+        subject &&
+        time &&
+        !EXCLUDED_SUBJECTS.has(subject) &&
+        !/holiday/i.test(subject)
+      ) {
         subjectsSet.add(subject);
-        sessions.push({ slot: i + 1, time, subject });
+        sessions.push({
+          slot: i + 1,
+          time,
+          subject,
+          subjectName: subjectNames.get(subject),
+        });
       }
     }
     if (sessions.length > 0) {
