@@ -1,1 +1,2 @@
 - [Live schedule sheet access](live-sheet-access.md) — production fetchers need a non-interactive, readable CSV source; never use personal credentials.
+- [Pinned pnpm in Replit](pinned-pnpm.md) — avoid parallel pnpm commands when the workspace auto-bootstraps its pinned package-manager version.

@@ -1,0 +1,332 @@
+2026-08-31T12:52:56.4035802Z Current runner version: '2.337.0'
+2026-08-31T12:52:56.4060476Z ##[group]Runner Image Provisioner
+2026-08-31T12:52:56.4061318Z Hosted Compute Agent
+2026-08-31T12:52:56.4061992Z Version: 20260819.586
+2026-08-31T12:52:56.4062635Z Commit: 3cc4a88dfa507ef76119ad1bb3eccc6378bb2b76
+2026-08-31T12:52:56.4063477Z Build Date: 2026-08-18T23:20:18Z
+2026-08-31T12:52:56.4064177Z Worker ID: {2cc6a611-8e04-4956-a65f-ae9e2777ef0a}
+2026-08-31T12:52:56.4065099Z Azure Region: eastus
+2026-08-31T12:52:56.4065741Z ##[endgroup]
+2026-08-31T12:52:56.4067739Z ##[group]Operating System
+2026-08-31T12:52:56.4068411Z Ubuntu
+2026-08-31T12:52:56.4069042Z 24.04.4
+2026-08-31T12:52:56.4069605Z LTS
+2026-08-31T12:52:56.4070151Z ##[endgroup]
+2026-08-31T12:52:56.4070720Z ##[group]Runner Image
+2026-08-31T12:52:56.4071444Z Image: ubuntu-24.04
+2026-08-31T12:52:56.4072074Z Version: 20260823.283.1
+2026-08-31T12:52:56.4073375Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260823.283/images/ubuntu/Ubuntu2404-Readme.md
+2026-08-31T12:52:56.4075329Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260823.283
+2026-08-31T12:52:56.4076385Z ##[endgroup]
+2026-08-31T12:52:56.4077588Z ##[group]GITHUB_TOKEN Permissions
+2026-08-31T12:52:56.4079808Z Contents: write
+2026-08-31T12:52:56.4080465Z Metadata: read
+2026-08-31T12:52:56.4081067Z Pages: write
+2026-08-31T12:52:56.4081671Z ##[endgroup]
+2026-08-31T12:52:56.4084410Z Secret source: Actions
+2026-08-31T12:52:56.4086211Z Prepare workflow directory
+2026-08-31T12:52:56.4478406Z Prepare all required actions
+2026-08-31T12:52:56.4527106Z Getting action download info
+2026-08-31T12:52:56.6621107Z Download action repository 'actions/checkout@v5' (SHA:fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09)
+2026-08-31T12:52:57.6815981Z Download action repository 'pnpm/action-setup@v4' (SHA:b906affcce14559ad1aafd4ab0e942779e9f58b1)
+2026-08-31T12:52:58.2770295Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-08-31T12:52:58.4020883Z Download action repository 'actions/configure-pages@v5' (SHA:983d7736d9b0ae728b81ab479565c72886d7745b)
+2026-08-31T12:52:58.5928560Z Download action repository 'actions/upload-pages-artifact@v3' (SHA:56afc609e74202658d3ffba0e8f6dda462b719fa)
+2026-08-31T12:52:58.6756430Z Download action repository 'actions/deploy-pages@v4' (SHA:d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e)
+2026-08-31T12:52:58.9834550Z Getting action download info
+2026-08-31T12:52:59.0502680Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-08-31T12:52:59.1948411Z Complete job name: build-deploy
+2026-08-31T12:52:59.2867234Z ##[group]Run actions/checkout@v5
+2026-08-31T12:52:59.2868182Z with:
+2026-08-31T12:52:59.2868713Z   repository: maitisubhrosil/Lecture-Tracker
+2026-08-31T12:52:59.2877002Z   token: ***
+2026-08-31T12:52:59.2877472Z   ssh-strict: true
+2026-08-31T12:52:59.2877946Z   ssh-user: git
+2026-08-31T12:52:59.2878439Z   persist-credentials: true
+2026-08-31T12:52:59.2878995Z   clean: true
+2026-08-31T12:52:59.2879504Z   sparse-checkout-cone-mode: true
+2026-08-31T12:52:59.2880114Z   fetch-depth: 1
+2026-08-31T12:52:59.2880569Z   fetch-tags: false
+2026-08-31T12:52:59.2881049Z   show-progress: true
+2026-08-31T12:52:59.2881531Z   lfs: false
+2026-08-31T12:52:59.2881963Z   submodules: false
+2026-08-31T12:52:59.2882457Z   set-safe-directory: true
+2026-08-31T12:52:59.2883050Z   allow-unsafe-pr-checkout: false
+2026-08-31T12:52:59.2883901Z env:
+2026-08-31T12:52:59.2884389Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-08-31T12:52:59.2885208Z ##[endgroup]
+2026-08-31T12:52:59.3955228Z Syncing repository: maitisubhrosil/Lecture-Tracker
+2026-08-31T12:52:59.3958512Z ##[group]Getting Git version info
+2026-08-31T12:52:59.3960521Z Working directory is '/home/runner/work/Lecture-Tracker/Lecture-Tracker'
+2026-08-31T12:52:59.3962928Z [command]/usr/bin/git version
+2026-08-31T12:52:59.4003250Z git version 2.55.0
+2026-08-31T12:52:59.4034927Z ##[endgroup]
+2026-08-31T12:52:59.4057040Z Temporarily overriding HOME='/home/runner/work/_temp/3d08deed-51e5-43b2-ab8e-264fba17e3cc' before making global git config changes
+2026-08-31T12:52:59.4061486Z Adding repository directory to the temporary git global config as a safe directory
+2026-08-31T12:52:59.4066223Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Lecture-Tracker/Lecture-Tracker
+2026-08-31T12:52:59.4146565Z Deleting the contents of '/home/runner/work/Lecture-Tracker/Lecture-Tracker'
+2026-08-31T12:52:59.4149268Z ##[group]Initializing the repository
+2026-08-31T12:52:59.4151016Z [command]/usr/bin/git init /home/runner/work/Lecture-Tracker/Lecture-Tracker
+2026-08-31T12:52:59.4261924Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-08-31T12:52:59.4266346Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-08-31T12:52:59.4268897Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-08-31T12:52:59.4270843Z hint: call:
+2026-08-31T12:52:59.4271670Z hint:
+2026-08-31T12:52:59.4272831Z hint: 	git config --global init.defaultBranch <name>
+2026-08-31T12:52:59.4274372Z hint:
+2026-08-31T12:52:59.4276062Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-08-31T12:52:59.4278368Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-08-31T12:52:59.4289181Z hint:
+2026-08-31T12:52:59.4298166Z hint: 	git branch -m <name>
+2026-08-31T12:52:59.4299486Z hint:
+2026-08-31T12:52:59.4301260Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-08-31T12:52:59.4304429Z Initialized empty Git repository in /home/runner/work/Lecture-Tracker/Lecture-Tracker/.git/
+2026-08-31T12:52:59.4313370Z [command]/usr/bin/git remote add origin https://github.com/maitisubhrosil/Lecture-Tracker
+2026-08-31T12:52:59.4346784Z ##[endgroup]
+2026-08-31T12:52:59.4348373Z ##[group]Disabling automatic garbage collection
+2026-08-31T12:52:59.4351235Z [command]/usr/bin/git config --local gc.auto 0
+2026-08-31T12:52:59.4394200Z ##[endgroup]
+2026-08-31T12:52:59.4396244Z ##[group]Setting up auth
+2026-08-31T12:52:59.4402925Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-08-31T12:52:59.4473663Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-08-31T12:52:59.4931382Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-08-31T12:52:59.4974227Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-08-31T12:52:59.5229166Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-08-31T12:52:59.5264591Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-08-31T12:52:59.5490400Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-08-31T12:52:59.5532113Z ##[endgroup]
+2026-08-31T12:52:59.5533697Z ##[group]Fetching the repository
+2026-08-31T12:52:59.5544452Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +2945fd7d7392674c65eaab5e49346a4e7577baa8:refs/remotes/origin/main
+2026-08-31T12:53:05.7310069Z From https://github.com/maitisubhrosil/Lecture-Tracker
+2026-08-31T12:53:05.7311067Z  * [new ref]             2945fd7d7392674c65eaab5e49346a4e7577baa8 -> origin/main
+2026-08-31T12:53:05.7321892Z ##[endgroup]
+2026-08-31T12:53:05.7323067Z ##[group]Determining the checkout info
+2026-08-31T12:53:05.7323612Z ##[endgroup]
+2026-08-31T12:53:05.7324274Z [command]/usr/bin/git sparse-checkout disable
+2026-08-31T12:53:05.7380409Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-08-31T12:53:05.7410755Z ##[group]Checking out the ref
+2026-08-31T12:53:05.7414390Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-08-31T12:53:06.9288308Z Updating files:   9% (7096/78429)
+2026-08-31T12:53:06.9696019Z Updating files:  10% (7843/78429)
+2026-08-31T12:53:07.0098795Z Updating files:  11% (8628/78429)
+2026-08-31T12:53:07.1098760Z Updating files:  12% (9412/78429)
+2026-08-31T12:53:07.1468731Z Updating files:  13% (10196/78429)
+2026-08-31T12:53:07.1919003Z Updating files:  14% (10981/78429)
+2026-08-31T12:53:07.2293393Z Updating files:  15% (11765/78429)
+2026-08-31T12:53:07.2783471Z Updating files:  16% (12549/78429)
+2026-08-31T12:53:07.3425851Z Updating files:  17% (13333/78429)
+2026-08-31T12:53:07.3935940Z Updating files:  18% (14118/78429)
+2026-08-31T12:53:07.4414021Z Updating files:  19% (14902/78429)
+2026-08-31T12:53:07.5043415Z Updating files:  20% (15686/78429)
+2026-08-31T12:53:07.5435909Z Updating files:  21% (16471/78429)
+2026-08-31T12:53:07.5906815Z Updating files:  22% (17255/78429)
+2026-08-31T12:53:07.6343274Z Updating files:  23% (18039/78429)
+2026-08-31T12:53:07.6680484Z Updating files:  24% (18823/78429)
+2026-08-31T12:53:07.6971830Z Updating files:  25% (19608/78429)
+2026-08-31T12:53:07.7333741Z Updating files:  26% (20392/78429)
+2026-08-31T12:53:07.7730133Z Updating files:  27% (21176/78429)
+2026-08-31T12:53:07.8027618Z Updating files:  28% (21961/78429)
+2026-08-31T12:53:07.8194986Z Updating files:  29% (22745/78429)
+2026-08-31T12:53:07.8400423Z Updating files:  29% (23133/78429)
+2026-08-31T12:53:07.8941479Z Updating files:  30% (23529/78429)
+2026-08-31T12:53:07.9344138Z Updating files:  31% (24313/78429)
+2026-08-31T12:53:07.9709351Z Updating files:  32% (25098/78429)
+2026-08-31T12:53:08.0059935Z Updating files:  33% (25882/78429)
+2026-08-31T12:53:08.0357356Z Updating files:  34% (26666/78429)
+2026-08-31T12:53:08.0648078Z Updating files:  35% (27451/78429)
+2026-08-31T12:53:08.1092046Z Updating files:  36% (28235/78429)
+2026-08-31T12:53:08.1479658Z Updating files:  37% (29019/78429)
+2026-08-31T12:53:08.1857873Z Updating files:  38% (29804/78429)
+2026-08-31T12:53:08.2209656Z Updating files:  39% (30588/78429)
+2026-08-31T12:53:08.2849859Z Updating files:  40% (31372/78429)
+2026-08-31T12:53:08.3305623Z Updating files:  41% (32156/78429)
+2026-08-31T12:53:08.3738056Z Updating files:  42% (32941/78429)
+2026-08-31T12:53:08.4077816Z Updating files:  43% (33725/78429)
+2026-08-31T12:53:08.4403513Z Updating files:  44% (34509/78429)
+2026-08-31T12:53:08.4704559Z Updating files:  45% (35294/78429)
+2026-08-31T12:53:08.5015482Z Updating files:  46% (36078/78429)
+2026-08-31T12:53:08.5361240Z Updating files:  47% (36862/78429)
+2026-08-31T12:53:08.6273650Z Updating files:  48% (37646/78429)
+2026-08-31T12:53:08.6674410Z Updating files:  49% (38431/78429)
+2026-08-31T12:53:08.7088219Z Updating files:  50% (39215/78429)
+2026-08-31T12:53:08.7483410Z Updating files:  51% (39999/78429)
+2026-08-31T12:53:08.7861339Z Updating files:  52% (40784/78429)
+2026-08-31T12:53:08.8195434Z Updating files:  53% (41568/78429)
+2026-08-31T12:53:08.8215034Z Updating files:  53% (42304/78429)
+2026-08-31T12:53:08.8620737Z Updating files:  54% (42352/78429)
+2026-08-31T12:53:08.9209389Z Updating files:  55% (43136/78429)
+2026-08-31T12:53:08.9756784Z Updating files:  56% (43921/78429)
+2026-08-31T12:53:09.0685160Z Updating files:  57% (44705/78429)
+2026-08-31T12:53:09.1128007Z Updating files:  58% (45489/78429)
+2026-08-31T12:53:09.1754552Z Updating files:  59% (46274/78429)
+2026-08-31T12:53:09.2109002Z Updating files:  60% (47058/78429)
+2026-08-31T12:53:09.2473041Z Updating files:  61% (47842/78429)
+2026-08-31T12:53:09.2814542Z Updating files:  62% (48626/78429)
+2026-08-31T12:53:09.3540093Z Updating files:  63% (49411/78429)
+2026-08-31T12:53:09.3951221Z Updating files:  64% (50195/78429)
+2026-08-31T12:53:09.4319536Z Updating files:  65% (50979/78429)
+2026-08-31T12:53:09.4855393Z Updating files:  66% (51764/78429)
+2026-08-31T12:53:09.5349533Z Updating files:  67% (52548/78429)
+2026-08-31T12:53:09.5600166Z Updating files:  68% (53332/78429)
+2026-08-31T12:53:09.6102008Z Updating files:  69% (54117/78429)
+2026-08-31T12:53:09.8335354Z Updating files:  70% (54901/78429)
+2026-08-31T12:53:09.8911267Z Updating files:  70% (55198/78429)
+2026-08-31T12:53:09.9238292Z Updating files:  71% (55685/78429)
+2026-08-31T12:53:10.0128734Z Updating files:  72% (56469/78429)
+2026-08-31T12:53:10.3178674Z Updating files:  73% (57254/78429)
+2026-08-31T12:53:10.3539745Z Updating files:  74% (58038/78429)
+2026-08-31T12:53:10.3965380Z Updating files:  75% (58822/78429)
+2026-08-31T12:53:10.4315536Z Updating files:  76% (59607/78429)
+2026-08-31T12:53:10.4663710Z Updating files:  77% (60391/78429)
+2026-08-31T12:53:10.5051154Z Updating files:  78% (61175/78429)
+2026-08-31T12:53:10.5421266Z Updating files:  79% (61959/78429)
+2026-08-31T12:53:10.5773380Z Updating files:  80% (62744/78429)
+2026-08-31T12:53:10.6187123Z Updating files:  81% (63528/78429)
+2026-08-31T12:53:10.6618233Z Updating files:  82% (64312/78429)
+2026-08-31T12:53:10.7057789Z Updating files:  83% (65097/78429)
+2026-08-31T12:53:10.7495904Z Updating files:  84% (65881/78429)
+2026-08-31T12:53:10.7954259Z Updating files:  85% (66665/78429)
+2026-08-31T12:53:10.8195527Z Updating files:  86% (67449/78429)
+2026-08-31T12:53:10.8426512Z Updating files:  86% (67836/78429)
+2026-08-31T12:53:10.8914613Z Updating files:  87% (68234/78429)
+2026-08-31T12:53:11.1389725Z Updating files:  88% (69018/78429)
+2026-08-31T12:53:11.1892187Z Updating files:  89% (69802/78429)
+2026-08-31T12:53:11.2293827Z Updating files:  90% (70587/78429)
+2026-08-31T12:53:11.2848594Z Updating files:  91% (71371/78429)
+2026-08-31T12:53:11.3309750Z Updating files:  92% (72155/78429)
+2026-08-31T12:53:11.3880550Z Updating files:  93% (72939/78429)
+2026-08-31T12:53:11.4269273Z Updating files:  94% (73724/78429)
+2026-08-31T12:53:11.5326474Z Updating files:  95% (74508/78429)
+2026-08-31T12:53:11.5800824Z Updating files:  96% (75292/78429)
+2026-08-31T12:53:11.9405719Z Updating files:  97% (76077/78429)
+2026-08-31T12:53:12.0205505Z Updating files:  97% (76324/78429)
+2026-08-31T12:53:12.0699023Z Updating files:  98% (76861/78429)
+2026-08-31T12:53:12.1114636Z Updating files:  99% (77645/78429)
+2026-08-31T12:53:12.1115374Z Updating files: 100% (78429/78429)
+2026-08-31T12:53:12.1115803Z Updating files: 100% (78429/78429), done.
+2026-08-31T12:53:12.2371333Z Switched to a new branch 'main'
+2026-08-31T12:53:12.2376517Z branch 'main' set up to track 'origin/main'.
+2026-08-31T12:53:12.2510128Z ##[endgroup]
+2026-08-31T12:53:12.2578296Z [command]/usr/bin/git log -1 --format=%H
+2026-08-31T12:53:12.2610588Z 2945fd7d7392674c65eaab5e49346a4e7577baa8
+2026-08-31T12:53:12.2885623Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-08-31T12:53:12.2887528Z ##[group]Run pnpm/action-setup@v4
+2026-08-31T12:53:12.2887788Z with:
+2026-08-31T12:53:12.2887991Z   version: 10.28.1
+2026-08-31T12:53:12.2888198Z   dest: ~/setup-pnpm
+2026-08-31T12:53:12.2888404Z   run_install: null
+2026-08-31T12:53:12.2888596Z   cache: false
+2026-08-31T12:53:12.2889467Z   cache_dependency_path: pnpm-lock.yaml
+2026-08-31T12:53:12.2889955Z   package_json_file: package.json
+2026-08-31T12:53:12.2890367Z   standalone: false
+2026-08-31T12:53:12.2890699Z env:
+2026-08-31T12:53:12.2891037Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-08-31T12:53:12.2891481Z ##[endgroup]
+2026-08-31T12:53:12.4368138Z ##[group]Running self-installer...
+2026-08-31T12:53:12.8769743Z (node:2273) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-08-31T12:53:12.8772012Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-08-31T12:53:13.0177144Z Progress: resolved 1, reused 0, downloaded 0, added 0
+2026-08-31T12:53:13.0275966Z Packages: +1
+2026-08-31T12:53:13.0276348Z +
+2026-08-31T12:53:13.4029499Z Progress: resolved 1, reused 0, downloaded 1, added 1, done
+2026-08-31T12:53:13.4348882Z 
+2026-08-31T12:53:13.4349357Z dependencies:
+2026-08-31T12:53:13.4349636Z + pnpm 10.28.1 (11.24.0 is available)
+2026-08-31T12:53:13.4349846Z 
+2026-08-31T12:53:13.4373019Z Done in 815ms
+2026-08-31T12:53:13.4540554Z ##[endgroup]
+2026-08-31T12:53:13.4540924Z Installation Completed!
+2026-08-31T12:53:13.4705986Z ##[group]Run actions/setup-node@v6
+2026-08-31T12:53:13.4706283Z with:
+2026-08-31T12:53:13.4706476Z   node-version: 24
+2026-08-31T12:53:13.4706683Z   cache: pnpm
+2026-08-31T12:53:13.4706882Z   check-latest: false
+2026-08-31T12:53:13.4709563Z   token: ***
+2026-08-31T12:53:13.4709773Z   package-manager-cache: true
+2026-08-31T12:53:13.4710014Z env:
+2026-08-31T12:53:13.4710223Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-08-31T12:53:13.4710564Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-08-31T12:53:13.4710885Z ##[endgroup]
+2026-08-31T12:53:13.6099824Z Found in cache @ /opt/hostedtoolcache/node/24.19.0/x64
+2026-08-31T12:53:13.6103671Z ##[group]Environment details
+2026-08-31T12:53:14.4999876Z node: v24.19.0
+2026-08-31T12:53:14.5000146Z npm: 11.17.0
+2026-08-31T12:53:14.5000336Z yarn: 1.22.22
+2026-08-31T12:53:14.5001496Z ##[endgroup]
+2026-08-31T12:53:14.5023046Z [command]/home/runner/setup-pnpm/node_modules/.bin/pnpm store path --silent
+2026-08-31T12:53:14.8901105Z /home/runner/setup-pnpm/node_modules/.bin/store/v10
+2026-08-31T12:53:14.9720311Z Cache hit for: node-cache-Linux-x64-pnpm-83c8c43f1768d6d4b88428652989169851b0457ef10fb5af1bdfd750ad7620a5
+2026-08-31T12:53:15.9758706Z Received 219098614 of 219098614 (100.0%), 221.6 MBs/sec
+2026-08-31T12:53:15.9760093Z Cache Size: ~209 MB (219098614 B)
+2026-08-31T12:53:15.9875631Z [command]/usr/bin/tar -xf /home/runner/work/_temp/34bc3b7c-72c9-4fcd-9047-820f998b340c/cache.tzst -P -C /home/runner/work/Lecture-Tracker/Lecture-Tracker --use-compress-program unzstd
+2026-08-31T12:53:19.3168727Z Cache restored successfully
+2026-08-31T12:53:19.3269298Z Cache restored from key: node-cache-Linux-x64-pnpm-83c8c43f1768d6d4b88428652989169851b0457ef10fb5af1bdfd750ad7620a5
+2026-08-31T12:53:19.3458846Z ##[group]Run pnpm install
+2026-08-31T12:53:19.3459176Z [36;1mpnpm install[0m
+2026-08-31T12:53:19.3505542Z shell: /usr/bin/bash -e {0}
+2026-08-31T12:53:19.3505815Z env:
+2026-08-31T12:53:19.3506044Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-08-31T12:53:19.3506411Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-08-31T12:53:19.3506734Z ##[endgroup]
+2026-08-31T12:53:19.6714591Z Scope: all 11 workspace projects
+2026-08-31T12:53:19.7645525Z Recreating /home/runner/work/Lecture-Tracker/Lecture-Tracker/node_modules
+2026-08-31T12:53:21.8756322Z Lockfile is up to date, resolution step is skipped
+2026-08-31T12:53:21.9283728Z Progress: resolved 1, reused 0, downloaded 0, added 0
+2026-08-31T12:53:22.0567736Z Packages: +1151
+2026-08-31T12:53:22.0568550Z ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+2026-08-31T12:53:22.9303017Z Progress: resolved 1151, reused 1125, downloaded 0, added 151
+2026-08-31T12:53:23.9326116Z Progress: resolved 1151, reused 1125, downloaded 0, added 966
+2026-08-31T12:53:24.3511788Z Progress: resolved 1151, reused 1125, downloaded 0, added 1151, done
+2026-08-31T12:53:24.8640724Z .../esbuild@0.27.3/node_modules/esbuild postinstall$ node install.js
+2026-08-31T12:53:24.8647749Z .../node_modules/workerd postinstall$ node install.js
+2026-08-31T12:53:24.8818113Z .../sharp@0.33.5/node_modules/sharp install$ node install/check
+2026-08-31T12:53:24.9536277Z .../esbuild@0.27.3/node_modules/esbuild postinstall: Done
+2026-08-31T12:53:24.9826960Z .../node_modules/workerd postinstall: Done
+2026-08-31T12:53:25.0149217Z .../sharp@0.33.5/node_modules/sharp install: Done
+2026-08-31T12:53:25.7105534Z 
+2026-08-31T12:53:25.7106112Z devDependencies:
+2026-08-31T12:53:25.7106548Z + prettier 3.8.1
+2026-08-31T12:53:25.7106953Z + typescript 5.9.3
+2026-08-31T12:53:25.7107479Z 
+2026-08-31T12:53:25.7512382Z . preinstall$ echo 'Using pnpm'
+2026-08-31T12:53:25.7616151Z . preinstall: Using pnpm
+2026-08-31T12:53:25.7626756Z . preinstall: Done
+2026-08-31T12:53:25.8965134Z Done in 6.5s using pnpm v10.28.1
+2026-08-31T12:53:25.9564466Z ##[group]Run pnpm --filter @workspace/scripts run fetch-schedule
+2026-08-31T12:53:25.9565335Z [36;1mpnpm --filter @workspace/scripts run fetch-schedule[0m
+2026-08-31T12:53:25.9603083Z shell: /usr/bin/bash -e {0}
+2026-08-31T12:53:25.9603335Z env:
+2026-08-31T12:53:25.9603553Z   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+2026-08-31T12:53:25.9603906Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-08-31T12:53:25.9604225Z ##[endgroup]
+2026-08-31T12:53:26.3089400Z 
+2026-08-31T12:53:26.3090652Z > @workspace/scripts@0.0.0 fetch-schedule /home/runner/work/Lecture-Tracker/Lecture-Tracker/scripts
+2026-08-31T12:53:26.3091929Z > tsx ./src/fetch-schedule.ts
+2026-08-31T12:53:26.3092399Z 
+2026-08-31T12:53:26.5386447Z Fetching schedule from Google Sheets...
+2026-08-31T12:53:27.0914070Z Failed: HTTP 401
+2026-08-31T12:53:27.1550258Z /home/runner/work/Lecture-Tracker/Lecture-Tracker/scripts:
+2026-08-31T12:53:27.1552301Z  ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/scripts@0.0.0 fetch-schedule: `tsx ./src/fetch-schedule.ts`
+2026-08-31T12:53:27.1553195Z Exit status 1
+2026-08-31T12:53:27.1770063Z ##[error]Process completed with exit code 1.
+2026-08-31T12:53:27.1903043Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-08-31T12:53:27.1904300Z Post job cleanup.
+2026-08-31T12:53:27.3328416Z Pruning is unnecessary.
+2026-08-31T12:53:27.3495884Z Post job cleanup.
+2026-08-31T12:53:27.4525515Z [command]/usr/bin/git version
+2026-08-31T12:53:27.4572586Z git version 2.55.0
+2026-08-31T12:53:27.4621734Z Temporarily overriding HOME='/home/runner/work/_temp/b59cdb20-7aa8-4933-a71b-2e9e30a6b88f' before making global git config changes
+2026-08-31T12:53:27.4632331Z Adding repository directory to the temporary git global config as a safe directory
+2026-08-31T12:53:27.4633989Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/Lecture-Tracker/Lecture-Tracker
+2026-08-31T12:53:27.4677459Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-08-31T12:53:27.4707208Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-08-31T12:53:27.5038074Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-08-31T12:53:27.5068888Z http.https://github.com/.extraheader
+2026-08-31T12:53:27.5098306Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-08-31T12:53:27.5138590Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-08-31T12:53:27.5485904Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-08-31T12:53:27.5530905Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-08-31T12:53:27.5982925Z Evaluate and set environment url
+2026-08-31T12:53:27.5986815Z Evaluated environment url: 
+2026-08-31T12:53:27.5987494Z Cleaning up orphan processes
+2026-08-31T12:53:27.6416468Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: pnpm/action-setup@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

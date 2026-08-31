@@ -157,11 +157,29 @@ function parseSchedule(csvText: string): ScheduleData {
 
 async function main() {
   console.log("Fetching schedule from Google Sheets...");
-  const response = await fetch(SHEET_CSV_URL, { redirect: "follow" });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  let response: Response;
+  try {
+    response = await fetch(SHEET_CSV_URL, { redirect: "follow" });
+  } catch (error) {
+    console.warn(
+      `Warning: live schedule could not be reached (${error instanceof Error ? error.message : String(error)}).`,
+    );
+    console.warn("Keeping the existing stored schedule data.");
+    return;
+  }
+  if (!response.ok) {
+    console.warn(`Warning: live schedule returned HTTP ${response.status}.`);
+    console.warn("Keeping the existing stored schedule data.");
+    return;
+  }
 
   const csvText = await response.text();
   const data = parseSchedule(csvText);
+  if (data.schedule.length === 0 || data.subjects.length === 0) {
+    console.warn("Warning: live schedule did not contain any usable sessions.");
+    console.warn("Keeping the existing stored schedule data.");
+    return;
+  }
 
   const outputPath = path.resolve("artifacts/schedule/public/schedule-data.json");
   mkdirSync(path.dirname(outputPath), { recursive: true });
