@@ -41,6 +41,7 @@ export interface Env {
   VAPID_PRIVATE_KEY: string;
   VAPID_SUBJECT: string;
   SHEET_CSV_URL: string;
+  FALLBACK_SCHEDULE_URL?: string;
   APP_TIME_ZONE?: string;
 }
 
@@ -61,6 +62,7 @@ interface ScheduleData {
   subjects: string[];
   schedule: DaySchedule[];
   lastFetched: string;
+  source?: "live" | "fallback";
 }
 interface PushSubscriptionJSON {
   endpoint: string;
@@ -98,8 +100,10 @@ const LEGACY_MIGRATION_FLAG = "subs:migrated"; // written once migration is conf
 const LEGACY_SUB_INDEX_KEY = "subs:index";
 const legacySubKey = (endpoint: string) => `sub:${endpoint}`;
 
-const SCHEDULE_CACHE_KEY = "schedule:cache";
-const SCHEDULE_DATE_KEY = "schedule:date";
+// Versioned keys prevent a previous term's KV cache from being accepted after
+// the timetable changes.
+const SCHEDULE_CACHE_KEY = "schedule:cache:v2";
+const SCHEDULE_DATE_KEY = "schedule:date:v2";
 const SCHEDULE_TTL_MS = 2 * 60 * 60 * 1000; // re-fetch from Sheet every 2 hours
 const CRON_TOLERANCE_MINUTES = 6;
 
@@ -389,12 +393,60 @@ async function getSchedule(env: Env, force = false): Promise<ScheduleData> {
       if (cached) return cached;
     }
   }
-  const res = await fetch(env.SHEET_CSV_URL, { redirect: "follow" });
-  if (!res.ok) throw new Error(`sheet fetch ${res.status}`);
-  const data = parseSchedule(await res.text());
-  await env.EPGP_KV.put(SCHEDULE_CACHE_KEY, JSON.stringify(data));
-  await env.EPGP_KV.put(SCHEDULE_DATE_KEY, String(Date.now()));
-  return data;
+
+  let liveError: unknown;
+  try {
+    const res = await fetch(env.SHEET_CSV_URL, { redirect: "follow" });
+    if (!res.ok) throw new Error(`sheet fetch ${res.status}`);
+    const data = parseSchedule(await res.text());
+    if (data.schedule.length === 0 || data.subjects.length === 0) {
+      throw new Error("sheet returned no usable sessions");
+    }
+    const liveData: ScheduleData = { ...data, source: "live" };
+    await env.EPGP_KV.put(SCHEDULE_CACHE_KEY, JSON.stringify(liveData));
+    await env.EPGP_KV.put(SCHEDULE_DATE_KEY, String(Date.now()));
+    return liveData;
+  } catch (error) {
+    liveError = error;
+    console.warn(
+      "live schedule unavailable",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
+  if (!env.FALLBACK_SCHEDULE_URL) {
+    throw liveError instanceof Error
+      ? liveError
+      : new Error(String(liveError));
+  }
+
+  try {
+    const fallbackResponse = await fetch(env.FALLBACK_SCHEDULE_URL, {
+      redirect: "follow",
+    });
+    if (!fallbackResponse.ok) {
+      throw new Error(`fallback schedule fetch ${fallbackResponse.status}`);
+    }
+    const fallbackData = (await fallbackResponse.json()) as ScheduleData;
+    if (
+      !Array.isArray(fallbackData.schedule) ||
+      fallbackData.schedule.length === 0 ||
+      !Array.isArray(fallbackData.subjects) ||
+      fallbackData.subjects.length === 0
+    ) {
+      throw new Error("fallback schedule contained no usable sessions");
+    }
+    const data: ScheduleData = { ...fallbackData, source: "fallback" };
+    await env.EPGP_KV.put(SCHEDULE_CACHE_KEY, JSON.stringify(data));
+    await env.EPGP_KV.put(SCHEDULE_DATE_KEY, String(Date.now()));
+    console.warn("using fallback schedule", env.FALLBACK_SCHEDULE_URL);
+    return data;
+  } catch (fallbackError) {
+    throw new Error(
+      `live schedule unavailable (${liveError instanceof Error ? liveError.message : String(liveError)}); ` +
+        `fallback unavailable (${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)})`,
+    );
+  }
 }
 
 

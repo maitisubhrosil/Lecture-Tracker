@@ -18,6 +18,7 @@ export interface ScheduleData {
   subjects: string[];
   schedule: DaySchedule[];
   lastFetched: string;
+  source?: "live" | "fallback";
 }
 
 export type ScheduleDataSource = "live" | "browser-cache" | "bundled";
@@ -58,11 +59,18 @@ function loadCache(): ScheduleData | null {
   }
 }
 
-async function fetchLiveSchedule(): Promise<ScheduleData | null> {
+async function fetchLiveSchedule(): Promise<{
+  data: ScheduleData;
+  source: "live" | "fallback";
+} | null> {
   try {
     const res = await fetch(API_URL);
     if (!res.ok) return null;
-    return await res.json();
+    const data = (await res.json()) as ScheduleData;
+    return {
+      data,
+      source: data.source === "fallback" ? "fallback" : "live",
+    };
   } catch {
     return null;
   }
@@ -93,9 +101,10 @@ export function useScheduleData() {
         // so the user is warned when the stored data is all that is available.
         const live = await fetchLiveSchedule();
         if (live) {
-          saveCache(live);
-          setData(live);
-          setDataSource("live");
+          saveCache(live.data);
+          setData(live.data);
+          setDataSource(live.source === "fallback" ? "bundled" : "live");
+          setLiveUnavailable(live.source === "fallback");
         } else {
           setLiveUnavailable(true);
         }
@@ -104,7 +113,7 @@ export function useScheduleData() {
     }
 
     const liveResult = await fetchLiveSchedule();
-    let result = liveResult;
+    let result = liveResult?.data ?? null;
 
     if (!result) {
       try {
@@ -116,8 +125,10 @@ export function useScheduleData() {
     if (result) {
       saveCache(result);
       setData(result);
-      setDataSource(liveResult ? "live" : "bundled");
-      setLiveUnavailable(!liveResult);
+      setDataSource(
+        liveResult?.source === "live" ? "live" : "bundled",
+      );
+      setLiveUnavailable(liveResult?.source !== "live");
       setIsLoading(false);
       return;
     }
