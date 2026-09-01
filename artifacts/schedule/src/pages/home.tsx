@@ -375,8 +375,33 @@ export default function Home() {
               ))}
             </div>
           ) : allSubjects.length > 0 ? (
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-2">
+            <div className="rounded-xl border border-indigo-100/80 bg-white/55 p-2.5 shadow-sm">
+              <div className="flex items-center justify-between gap-3 px-1 pb-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-gray-600">
+                      Filter subjects
+                    </span>
+                    <span className="text-[10px] text-gray-400">
+                      scroll to select
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-gray-400">
+                    Code · full subject name
+                  </p>
+                </div>
+                <span
+                  className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-600"
+                  data-testid="selected-subject-count"
+                >
+                  {selectedSubjects.size} selected
+                </span>
+              </div>
+              <div
+                className="grid max-h-36 grid-cols-1 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2"
+                style={{ scrollbarWidth: "thin" }}
+                aria-label="Subject filters"
+              >
                 {allSubjects.map((subject) => {
                   const colors = getSubjectColor(subject, allSubjects);
                   const isSelected = selectedSubjects.has(subject);
@@ -385,22 +410,33 @@ export default function Home() {
                       key={subject}
                       onClick={() => toggleSubject(subject)}
                       data-testid={`chip-subject-${subject}`}
-                      className={`px-3 py-1.5 rounded-full text-sm font-semibold transition-all duration-150 select-none border-2 ${
+                      title={subjectNames[subject] ?? subject}
+                      aria-pressed={isSelected}
+                      className={`flex min-h-9 items-start justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-all duration-150 select-none ${
                         isSelected
-                          ? `${colors.chip} ${colors.border} scale-105 shadow-sm`
-                          : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+                          ? `${colors.chip} ${colors.border} shadow-sm`
+                          : "bg-white/85 text-gray-600 border-gray-200 hover:border-indigo-300 hover:bg-white"
                       }`}
                     >
-                      {subjectNames[subject] ?? subject}
+                      <span className="shrink-0 text-[11px] font-bold tracking-wide">
+                        {subject}
+                      </span>
+                      <span
+                        className={`min-w-0 text-[10px] font-medium leading-tight ${
+                          isSelected ? "text-white/90" : "text-gray-500"
+                        }`}
+                      >
+                        {subjectNames[subject] ?? subject}
+                      </span>
                     </button>
                   );
                 })}
               </div>
-              <div className="flex items-center gap-3 justify-end">
+              <div className="flex items-center justify-end gap-3 px-1 pt-2">
                 {(selectedSubjects.size > 0 || appliedSubjects.size > 0) && (
                   <button
                     onClick={clearFilters}
-                    className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                    className="text-[11px] text-gray-400 transition-colors hover:text-gray-600"
                     data-testid="button-clear-filters"
                   >
                     clear all
@@ -411,7 +447,7 @@ export default function Home() {
                   onClick={applyFilters}
                   disabled={!hasUnappliedChanges}
                   data-testid="button-apply-filters"
-                  className={`h-8 text-xs px-4 rounded-full font-semibold transition-all ${
+                   className={`h-7 rounded-full px-3 text-[11px] font-semibold transition-all ${
                     hasUnappliedChanges
                       ? "bg-gray-900 text-white hover:bg-gray-700"
                       : "bg-gray-100 text-gray-400 cursor-default"
@@ -544,7 +580,7 @@ export default function Home() {
                           <span
                             className={`text-sm font-bold px-3 py-1.5 rounded-xl border ${colors.card} ${colors.text} ${colors.border} shrink-0`}
                           >
-                            {session.subjectName ?? session.subject}
+                            {session.subject}
                           </span>
                         </div>
                       );

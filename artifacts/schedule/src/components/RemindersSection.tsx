@@ -82,17 +82,6 @@ function formatDateTime(value: Date): string {
   });
 }
 
-function getSubjectName(
-  subject: string,
-  schedule: ScheduleData | undefined,
-): string {
-  for (const day of schedule?.schedule ?? []) {
-    const session = day.sessions.find((item) => item.subject === subject);
-    if (session?.subjectName) return session.subjectName;
-  }
-  return subject;
-}
-
 function nextFireLabel(
   reminder: Reminder,
   scheduleData: ScheduleData | undefined,
@@ -216,7 +205,7 @@ function buildCalendarFile(
           `class-${reminder.id}-${day.date}-${session.slot}-${session.subject}`,
           icsDate(date, range.start),
           icsDate(date, range.end),
-          `ePGP: ${session.subjectName ?? session.subject}`,
+          `ePGP: ${session.subject}`,
           `${day.day} ${day.date} · ${day.week}\nSlot S${session.slot} · ${session.time}`,
           reminder.preClassNudge ? 15 : undefined,
         );
@@ -605,7 +594,7 @@ export default function RemindersSection({
                         : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
                     }`}
                   >
-                    {getSubjectName(s, scheduleData)}
+                    {s}
                   </button>
                 );
               })}
@@ -795,7 +784,7 @@ export default function RemindersSection({
                               key={s}
                               className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${colors.card} ${colors.text} ${colors.border}`}
                             >
-                              {getSubjectName(s, scheduleData)}
+                              {s}
                             </span>
                           );
                         })}

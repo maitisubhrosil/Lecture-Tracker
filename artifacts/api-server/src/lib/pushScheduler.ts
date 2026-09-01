@@ -117,10 +117,8 @@ async function evaluateReminder(rec: SubscriberRecord, reminder: Reminder, sched
     const key = `${reminder.id}|${todayISO}|${slot}`;
     if (rec.sent[key]) continue;
 
-    const title = `📚 Reminder: ${reminder.subjects
-      .map(subject => todaySched.sessions.find(s => s.subject === subject)?.subjectName ?? subject)
-      .join(", ")}`;
-    const body = matchedSessions.map(s => `S${s.slot} · ${s.time} · ${s.subjectName ?? s.subject}`).join("\n");
+    const title = `📚 Reminder: ${reminder.subjects.join(", ")}`;
+    const body = matchedSessions.map(s => `S${s.slot} · ${s.time} · ${s.subject}`).join("\n");
     const ok = await sendPush(rec, { title, body, tag: key });
     if (ok) markSent(rec.subscription.endpoint, key);
   }
@@ -136,7 +134,7 @@ async function evaluateReminder(rec: SubscriberRecord, reminder: Reminder, sched
       const key = `preclass|${reminder.id}|${todayISO}|${sess.slot}|${sess.subject}`;
       if (rec.sent[key]) continue;
 
-      const title = `⏰ ${sess.subjectName ?? sess.subject} starts in 15 min`;
+      const title = `⏰ ${sess.subject} starts in 15 min`;
       const body = `Slot S${sess.slot} · ${sess.time}`;
       const ok = await sendPush(rec, { title, body, tag: key });
       if (ok) markSent(rec.subscription.endpoint, key);

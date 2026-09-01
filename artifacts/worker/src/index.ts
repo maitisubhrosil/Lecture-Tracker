@@ -516,7 +516,7 @@ function buildCalendarSubscriptionIcs(data: ScheduleData, subjects: string[], sl
         `live-class-${day.date}-${sess.slot}-${sess.subject}`,
         start,
         end,
-        `ePGP: ${sess.subjectName ?? sess.subject}`,
+        `ePGP: ${sess.subject}`,
         `${day.day} ${day.date} · ${day.week}\nSlot S${sess.slot} · ${sess.time}`,
         includePreClass ? 15 : undefined,
       );
@@ -793,10 +793,6 @@ async function sendPush(
 }
 
 function subjectLabel(data: ScheduleData, subject: string): string {
-  for (const day of data.schedule) {
-    const session = day.sessions.find((item) => item.subject === subject);
-    if (session?.subjectName) return session.subjectName;
-  }
   return subject;
 }
 
@@ -877,7 +873,7 @@ async function evaluateAll(env: Env) {
           body: matched
             .map(
               (s) =>
-                `S${s.slot} · ${s.time} · ${s.subjectName ?? s.subject}`,
+                `S${s.slot} · ${s.time} · ${s.subject}`,
             )
             .join("\n"),
           tag: key,
@@ -909,7 +905,7 @@ async function evaluateAll(env: Env) {
           const ok = await sendPush(env, rec, {
             title: `⏰ ${subjectLabel(data, sess.subject)} starts in 15 min`,
             body: `Slot S${sess.slot} · ${sess.time} · ${
-              sess.subjectName ?? sess.subject
+              sess.subject
             }`,
             tag: key,
           });
