@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import {
   useScheduleData,
+  TIME_ZONE_OFFSET_KEY,
   type ScheduleData,
 } from "@/lib/useScheduleData";
 import { BellRing, Clock, HelpCircle, RefreshCw, Users } from "lucide-react";
@@ -176,6 +177,55 @@ function parseEndTimeMinutes(timeRange: string): number | null {
   return hours * 60 + minutes;
 }
 
+function parseClockMinutes(value: string): number | null {
+  const match = value.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!match) return null;
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const period = match[3].toUpperCase();
+  if (period === "PM" && hours !== 12) hours += 12;
+  if (period === "AM" && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+}
+
+function formatClockMinutes(value: number): string {
+  const normalized = ((value % 1440) + 1440) % 1440;
+  const hours24 = Math.floor(normalized / 60);
+  const minutes = normalized % 60;
+  const period = hours24 >= 12 ? "PM" : "AM";
+  const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+  return `${hours12}:${String(minutes).padStart(2, "0")} ${period}`;
+}
+
+function formatTimeRange(timeRange: string, offsetMinutes: number): string {
+  if (offsetMinutes === 0) return timeRange;
+  const matches = timeRange.match(/\d+:\d+\s*(?:AM|PM)/gi);
+  if (!matches || matches.length < 2) return timeRange;
+  const start = parseClockMinutes(matches[0]);
+  const end = parseClockMinutes(matches[matches.length - 1]);
+  if (start === null || end === null) return timeRange;
+  return `${formatClockMinutes(start + offsetMinutes)} - ${formatClockMinutes(end + offsetMinutes)}`;
+}
+
+function formatOffset(offsetMinutes: number): string {
+  const sign = offsetMinutes < 0 ? "−" : "+";
+  const absolute = Math.abs(offsetMinutes);
+  return `IST ${sign} ${Math.floor(absolute / 60)}:${String(absolute % 60).padStart(2, "0")}`;
+}
+
+function localScheduleEnd(
+  dateStr: string,
+  timeRange: string,
+  offsetMinutes: number,
+): Date | null {
+  const date = parseScheduleDate(dateStr);
+  const endMinutes = parseEndTimeMinutes(timeRange);
+  if (!date || endMinutes === null) return null;
+  date.setHours(Math.floor(endMinutes / 60), endMinutes % 60, 0, 0);
+  date.setMinutes(date.getMinutes() + offsetMinutes);
+  return date;
+}
+
 function isSameCalendarDay(a: Date, b: Date) {
   return (
     a.getFullYear() === b.getFullYear() &&
@@ -203,6 +253,19 @@ export default function Home() {
   const [appliedSubjects, setAppliedSubjects] = useState<Set<string>>(
     new Set(),
   );
+  const [timeOffsetMinutes, setTimeOffsetMinutes] = useState(() => {
+    const stored = Number(localStorage.getItem(TIME_ZONE_OFFSET_KEY));
+    return Number.isFinite(stored) ? stored : 0;
+  });
+  const [draftTimeSign, setDraftTimeSign] = useState<"+" | "-">(
+    timeOffsetMinutes < 0 ? "-" : "+",
+  );
+  const [draftTimeHours, setDraftTimeHours] = useState(
+    Math.floor(Math.abs(timeOffsetMinutes) / 60),
+  );
+  const [draftTimeMinutes, setDraftTimeMinutes] = useState(
+    Math.abs(timeOffsetMinutes) % 60,
+  );
 
   const toggleSubject = (subject: string) => {
     setSelectedSubjects((prev) => {
@@ -220,38 +283,39 @@ export default function Home() {
 
   const applyFilters = () => setAppliedSubjects(new Set(selectedSubjects));
 
+  const draftOffsetMinutes =
+    (draftTimeSign === "-" ? -1 : 1) *
+    (draftTimeHours * 60 + draftTimeMinutes);
+  const hasUnappliedTimeZone =
+    draftOffsetMinutes !== timeOffsetMinutes;
+  const applyTimeZone = () => {
+    setTimeOffsetMinutes(draftOffsetMinutes);
+    localStorage.setItem(TIME_ZONE_OFFSET_KEY, String(draftOffsetMinutes));
+  };
+
   const hasUnappliedChanges =
     selectedSubjects.size !== appliedSubjects.size ||
     Array.from(selectedSubjects).some((s) => !appliedSubjects.has(s));
 
   const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
   const upcomingSchedule = useMemo(() => {
     if (!data?.schedule) return [];
     const today = new Date();
 
     return data.schedule
       .map((day) => {
-        const date = parseScheduleDate(day.date);
-        if (!date) return null;
-
-        const isPast = date < today && !isSameCalendarDay(date, today);
-        if (isPast) return null;
-
-        if (isSameCalendarDay(date, today)) {
-          const sessions = day.sessions.filter((s) => {
-            const endMins = parseEndTimeMinutes(s.time);
-            return endMins === null || endMins > currentMinutes;
-          });
-          if (sessions.length === 0) return null;
-          return { ...day, sessions };
-        }
-
-        return day;
+        const sessions = day.sessions.filter((session) => {
+          const end = localScheduleEnd(
+            day.date,
+            session.time,
+            timeOffsetMinutes,
+          );
+          return end === null || end > today;
+        });
+        return sessions.length > 0 ? { ...day, sessions } : null;
       })
       .filter((d): d is NonNullable<typeof d> => d !== null);
-  }, [data, currentMinutes]);
+  }, [data, timeOffsetMinutes]);
 
   const filteredSchedule = useMemo(() => {
     if (appliedSubjects.size === 0) return upcomingSchedule;
@@ -375,7 +439,82 @@ export default function Home() {
               ))}
             </div>
           ) : allSubjects.length > 0 ? (
-            <div className="rounded-xl border border-indigo-100/80 bg-white/55 p-2.5 shadow-sm">
+            <div className="space-y-2">
+              <div className="rounded-xl border border-indigo-100/80 bg-white/55 px-2.5 py-2 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-gray-600">
+                        Time zone
+                      </span>
+                      <span className="text-[10px] text-gray-400">
+                        local time = {formatOffset(timeOffsetMinutes)}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-gray-400">
+                      IST + 0:00 keeps India time
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <div className="flex rounded-lg border border-gray-200 bg-white p-0.5">
+                      {(["+", "-"] as const).map((sign) => (
+                        <button
+                          key={sign}
+                          type="button"
+                          onClick={() => setDraftTimeSign(sign)}
+                          aria-pressed={draftTimeSign === sign}
+                          className={`h-6 w-6 rounded-md text-xs font-bold transition-colors ${
+                            draftTimeSign === sign
+                              ? "bg-indigo-500 text-white"
+                              : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                          }`}
+                        >
+                          {sign}
+                        </button>
+                      ))}
+                    </div>
+                    <select
+                      value={draftTimeHours}
+                      onChange={(event) => setDraftTimeHours(Number(event.target.value))}
+                      aria-label="Timezone offset hours"
+                      className="h-7 w-12 rounded-lg border border-gray-200 bg-white px-1 text-center text-[11px] font-semibold text-gray-700 outline-none focus:border-indigo-400"
+                    >
+                      {Array.from({ length: 18 }, (_, hour) => (
+                        <option key={hour} value={hour}>
+                          {hour}h
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-xs font-bold text-gray-400">:</span>
+                    <select
+                      value={draftTimeMinutes}
+                      onChange={(event) => setDraftTimeMinutes(Number(event.target.value))}
+                      aria-label="Timezone offset minutes"
+                      className="h-7 w-14 rounded-lg border border-gray-200 bg-white px-1 text-center text-[11px] font-semibold text-gray-700 outline-none focus:border-indigo-400"
+                    >
+                      {[0, 15, 30, 45].map((minute) => (
+                        <option key={minute} value={minute}>
+                          {String(minute).padStart(2, "0")}m
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      size="sm"
+                      type="button"
+                      onClick={applyTimeZone}
+                      disabled={!hasUnappliedTimeZone}
+                      className={`h-7 rounded-full px-2.5 text-[11px] font-semibold ${
+                        hasUnappliedTimeZone
+                          ? "bg-gray-900 text-white hover:bg-gray-700"
+                          : "bg-gray-100 text-gray-400"
+                      }`}
+                    >
+                      Apply
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-indigo-100/80 bg-white/55 p-2.5 shadow-sm">
               <div className="flex items-center justify-between gap-3 px-1 pb-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -456,6 +595,7 @@ export default function Home() {
                   {hasUnappliedChanges ? "Apply ✓" : "Applied"}
                 </Button>
               </div>
+              </div>
             </div>
           ) : null}
         </div>
@@ -466,6 +606,7 @@ export default function Home() {
         {!isLoading && allSubjects.length > 0 && (
           <RemindersSection
             scheduleData={data}
+            timeOffsetMinutes={timeOffsetMinutes}
             getSubjectColor={getSubjectColor}
           />
         )}
@@ -574,7 +715,7 @@ export default function Home() {
                               className={`inline-flex items-center gap-1 text-xs font-medium ${colors.text} shrink-0`}
                             >
                               <Clock className="h-3 w-3 opacity-70" />
-                              {session.time}
+                            {formatTimeRange(session.time, timeOffsetMinutes)}
                             </span>
                           </div>
                           <span

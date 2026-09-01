@@ -23,10 +23,14 @@ import {
   usePushReminders,
 } from "@/lib/usePushReminders";
 import type { Reminder } from "@/lib/usePushReminders";
-import type { ScheduleData } from "@/lib/useScheduleData";
+import {
+  TIME_ZONE_OFFSET_KEY,
+  type ScheduleData,
+} from "@/lib/useScheduleData";
 
 interface Props {
   scheduleData: ScheduleData | undefined;
+  timeOffsetMinutes: number;
   getSubjectColor: (
     subject: string,
     all: string[],
@@ -69,8 +73,19 @@ function parseTimeRangeMinutes(
 
 function dateWithMinutes(day: Date, minutes: number): Date {
   const d = new Date(day);
-  d.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  d.setMinutes(minutes);
   return d;
+}
+
+function shiftClockSlot(slot: string, offsetMinutes: number): string {
+  const [hours, minutes] = slot.split(":").map(Number);
+  const total = ((hours * 60 + minutes + offsetMinutes) % 1440 + 1440) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function formatSlotLabelWithOffset(slot: string, offsetMinutes: number): string {
+  return formatSlotLabel(shiftClockSlot(slot, offsetMinutes));
 }
 
 function formatDateTime(value: Date): string {
@@ -85,6 +100,7 @@ function formatDateTime(value: Date): string {
 function nextFireLabel(
   reminder: Reminder,
   scheduleData: ScheduleData | undefined,
+  timeOffsetMinutes: number,
 ): string {
   if (!scheduleData) return "Next reminder: waiting for schedule";
   const now = new Date();
@@ -101,7 +117,7 @@ function nextFireLabel(
     for (const slot of reminder.times) {
       const mins = parseClockMinutes(slot);
       if (mins === null) continue;
-      const fire = dateWithMinutes(date, mins);
+      const fire = dateWithMinutes(date, mins + timeOffsetMinutes);
       if (fire >= now) candidates.push(fire);
     }
 
@@ -110,7 +126,10 @@ function nextFireLabel(
         if (!reminder.subjects.includes(session.subject)) continue;
         const range = parseTimeRangeMinutes(session.time);
         if (!range) continue;
-        const fire = dateWithMinutes(date, range.start - 15);
+        const fire = dateWithMinutes(
+          date,
+          range.start - 15 + timeOffsetMinutes,
+        );
         if (fire >= now) candidates.push(fire);
       }
     }
@@ -264,6 +283,7 @@ function diagnosticsLabel(
 
 export default function RemindersSection({
   scheduleData,
+  timeOffsetMinutes,
   getSubjectColor,
 }: Props) {
   const allSubjects = scheduleData?.subjects ?? [];
@@ -329,7 +349,10 @@ export default function RemindersSection({
     try {
       await addReminder({
         subjects: Array.from(subjects),
-        times: Array.from(slots).sort(),
+        // The UI is local-to-the-user; the worker continues evaluating in IST.
+        times: Array.from(slots)
+          .map((slot) => shiftClockSlot(slot, -timeOffsetMinutes))
+          .sort(),
         preClassNudge: preClass,
       });
       setSubjects(new Set());
@@ -363,7 +386,10 @@ export default function RemindersSection({
     if (subjects.size === 0) return;
     const qs = new URLSearchParams({
       subjects: Array.from(subjects).join(","),
-      times: Array.from(slots).sort().join(","),
+      times: Array.from(slots)
+        .map((slot) => shiftClockSlot(slot, -timeOffsetMinutes))
+        .sort()
+        .join(","),
       preClass: preClass ? "true" : "false",
     });
     const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "").replace(/\/api$/, "");
@@ -375,7 +401,9 @@ export default function RemindersSection({
   const handleDownloadCalendar = () => {
     const ics = buildCalendarFileForSelection(
       Array.from(subjects),
-      Array.from(slots).sort(),
+      Array.from(slots)
+        .map((slot) => shiftClockSlot(slot, -timeOffsetMinutes))
+        .sort(),
       preClass,
       scheduleData,
     );
@@ -408,6 +436,7 @@ export default function RemindersSection({
       localStorage.removeItem("epgp_schedule_data");
       localStorage.removeItem("epgp_schedule_date");
       localStorage.removeItem("epgp_schedule_timestamp");
+      localStorage.removeItem(TIME_ZONE_OFFSET_KEY);
       sessionStorage.clear();
       window.location.reload();
     } catch {
@@ -648,7 +677,7 @@ export default function RemindersSection({
                           : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
                       }`}
                     >
-                      {formatSlotLabel(slot)}
+                      {formatSlotLabelWithOffset(slot, timeOffsetMinutes)}
                     </button>
                   );
                 })}
@@ -791,7 +820,15 @@ export default function RemindersSection({
                       </div>
                       <div className="text-[11px] text-gray-500 flex flex-wrap items-center gap-x-3 gap-y-0.5">
                         <span>
-                          🕐 {r.times.map(formatSlotLabel).join(" · ")}
+                           🕐{" "}
+                           {r.times
+                             .map((slot) =>
+                               formatSlotLabelWithOffset(
+                                 slot,
+                                 timeOffsetMinutes,
+                               ),
+                             )
+                             .join(" · ")}
                         </span>
                         {r.preClassNudge && (
                           <span className="inline-flex items-center gap-0.5 text-indigo-600 font-semibold">
@@ -799,7 +836,7 @@ export default function RemindersSection({
                           </span>
                         )}
                         <span className="font-medium text-gray-600">
-                          {nextFireLabel(r, scheduleData)}
+                           {nextFireLabel(r, scheduleData, timeOffsetMinutes)}
                         </span>
                       </div>
                     </div>

@@ -35,6 +35,7 @@ const API_URL = `${API_BASE}/api/schedule`;
 // cannot mask the newly fetched schedule during the normal cache window.
 const CACHE_KEY = "epgp_schedule_data_v2";
 const CACHE_TIMESTAMP_KEY = "epgp_schedule_timestamp";
+export const TIME_ZONE_OFFSET_KEY = "epgp_timezone_offset_minutes";
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 function isCacheFresh(): boolean {
