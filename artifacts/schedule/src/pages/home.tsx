@@ -4,10 +4,19 @@ import {
   TIME_ZONE_OFFSET_KEY,
   type ScheduleData,
 } from "@/lib/useScheduleData";
-import { BellRing, Clock, HelpCircle, RefreshCw, Users } from "lucide-react";
+import {
+  BellRing,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  HelpCircle,
+  RefreshCw,
+  Users,
+} from "lucide-react";
 
 const HELP_DOC_URL =
   "https://github.com/maitisubhrosil/Lecture-Tracker/blob/main/help.md";
+const CONTROLS_COLLAPSED_KEY = "epgp_schedule_controls_collapsed_v1";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import RemindersSection from "@/components/RemindersSection";
@@ -246,6 +255,9 @@ export default function Home() {
   const { activeSubscribers } = usePushStats();
   const { toast } = useToast();
   const hasShownDataWarning = useRef(false);
+  const [controlsCollapsed, setControlsCollapsed] = useState(
+    () => localStorage.getItem(CONTROLS_COLLAPSED_KEY) === "true",
+  );
 
   const [selectedSubjects, setSelectedSubjects] = useState<Set<string>>(
     new Set(),
@@ -291,6 +303,14 @@ export default function Home() {
   const applyTimeZone = () => {
     setTimeOffsetMinutes(draftOffsetMinutes);
     localStorage.setItem(TIME_ZONE_OFFSET_KEY, String(draftOffsetMinutes));
+  };
+
+  const toggleControls = () => {
+    setControlsCollapsed((collapsed) => {
+      const next = !collapsed;
+      localStorage.setItem(CONTROLS_COLLAPSED_KEY, String(next));
+      return next;
+    });
   };
 
   const hasUnappliedChanges =
@@ -403,16 +423,42 @@ export default function Home() {
               </div>
             </div>
             <div className="flex flex-col items-end gap-1 shrink-0">
-              <a
-                href={HELP_DOC_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 underline underline-offset-2"
-                data-testid="header-setup-help-link"
-              >
-                <HelpCircle className="h-3.5 w-3.5" />
-                Setup help
-              </a>
+              <div className="flex items-center gap-2">
+                <button
+                   type="button"
+                   onClick={toggleControls}
+                   aria-controls="schedule-controls"
+                   aria-expanded={!controlsCollapsed}
+                   aria-label={
+                     controlsCollapsed
+                       ? "Show schedule controls"
+                       : "Hide schedule controls"
+                   }
+                   title={
+                     controlsCollapsed
+                       ? "Show schedule controls"
+                       : "Hide schedule controls"
+                   }
+                   className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-indigo-100 bg-white/80 text-indigo-500 shadow-sm transition-colors hover:bg-white hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1"
+                   data-testid="button-toggle-schedule-controls"
+                 >
+                   {controlsCollapsed ? (
+                     <ChevronDown className="h-3.5 w-3.5" />
+                   ) : (
+                     <ChevronUp className="h-3.5 w-3.5" />
+                   )}
+                </button>
+                <a
+                   href={HELP_DOC_URL}
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 underline underline-offset-2"
+                   data-testid="header-setup-help-link"
+                 >
+                   <HelpCircle className="h-3.5 w-3.5" />
+                   Setup help
+                </a>
+              </div>
               {!isLoading && data?.lastFetched && (
                 <span
                   className="text-[11px] text-gray-400"
@@ -428,176 +474,177 @@ export default function Home() {
             </div>
           </div>
 
-          {isLoading ? (
-            <div className="flex gap-2 overflow-hidden">
-              {[80, 64, 96, 72, 56].map((w) => (
-                <Skeleton
-                  key={w}
-                  className="h-8 rounded-full"
-                  style={{ width: w }}
-                />
-              ))}
-            </div>
-          ) : allSubjects.length > 0 ? (
-            <div className="space-y-2">
-              <div className="rounded-xl border border-indigo-100/80 bg-white/55 px-2.5 py-2 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wide text-gray-600">
-                        Time zone
-                      </span>
-                      <span className="text-[10px] text-gray-400">
-                        local time = {formatOffset(timeOffsetMinutes)}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-gray-400">
-                      IST + 0:00 keeps India time
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <div className="flex rounded-lg border border-gray-200 bg-white p-0.5">
-                      {(["+", "-"] as const).map((sign) => (
-                        <button
-                          key={sign}
-                          type="button"
-                          onClick={() => setDraftTimeSign(sign)}
-                          aria-pressed={draftTimeSign === sign}
-                          className={`h-6 w-6 rounded-md text-xs font-bold transition-colors ${
-                            draftTimeSign === sign
-                              ? "bg-indigo-500 text-white"
-                              : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-                          }`}
-                        >
-                          {sign}
-                        </button>
-                      ))}
-                    </div>
-                    <select
-                      value={draftTimeHours}
-                      onChange={(event) => setDraftTimeHours(Number(event.target.value))}
-                      aria-label="Timezone offset hours"
-                      className="h-7 w-12 rounded-lg border border-gray-200 bg-white px-1 text-center text-[11px] font-semibold text-gray-700 outline-none focus:border-indigo-400"
-                    >
-                      {Array.from({ length: 18 }, (_, hour) => (
-                        <option key={hour} value={hour}>
-                          {hour}h
-                        </option>
-                      ))}
-                    </select>
-                    <span className="text-xs font-bold text-gray-400">:</span>
-                    <select
-                      value={draftTimeMinutes}
-                      onChange={(event) => setDraftTimeMinutes(Number(event.target.value))}
-                      aria-label="Timezone offset minutes"
-                      className="h-7 w-14 rounded-lg border border-gray-200 bg-white px-1 text-center text-[11px] font-semibold text-gray-700 outline-none focus:border-indigo-400"
-                    >
-                      {[0, 15, 30, 45].map((minute) => (
-                        <option key={minute} value={minute}>
-                          {String(minute).padStart(2, "0")}m
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      size="sm"
-                      type="button"
-                      onClick={applyTimeZone}
-                      disabled={!hasUnappliedTimeZone}
-                      className={`h-7 rounded-full px-2.5 text-[11px] font-semibold ${
-                        hasUnappliedTimeZone
-                          ? "bg-gray-900 text-white hover:bg-gray-700"
-                          : "bg-gray-100 text-gray-400"
-                      }`}
-                    >
-                      Apply
-                    </Button>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-xl border border-indigo-100/80 bg-white/55 p-2.5 shadow-sm">
-              <div className="flex items-center justify-between gap-3 px-1 pb-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wide text-gray-600">
-                      Filter subjects
-                    </span>
-                    <span className="text-[10px] text-gray-400">
-                      scroll to select
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-gray-400">
-                    Code · full subject name
-                  </p>
-                </div>
-                <span
-                  className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-600"
-                  data-testid="selected-subject-count"
-                >
-                  {selectedSubjects.size} selected
-                </span>
-              </div>
-              <div
-                className="grid max-h-36 grid-cols-1 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2"
-                style={{ scrollbarWidth: "thin" }}
-                aria-label="Subject filters"
-              >
-                {allSubjects.map((subject) => {
-                  const colors = getSubjectColor(subject, allSubjects);
-                  const isSelected = selectedSubjects.has(subject);
-                  return (
-                    <button
-                      key={subject}
-                      onClick={() => toggleSubject(subject)}
-                      data-testid={`chip-subject-${subject}`}
-                      title={subjectNames[subject] ?? subject}
-                      aria-pressed={isSelected}
-                      className={`flex min-h-9 items-start justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-all duration-150 select-none ${
-                        isSelected
-                          ? `${colors.chip} ${colors.border} shadow-sm`
-                          : "bg-white/85 text-gray-600 border-gray-200 hover:border-indigo-300 hover:bg-white"
-                      }`}
-                    >
-                      <span className="shrink-0 text-[11px] font-bold tracking-wide">
-                        {subject}
-                      </span>
-                      <span
-                        className={`min-w-0 text-[10px] font-medium leading-tight ${
-                          isSelected ? "text-white/90" : "text-gray-500"
-                        }`}
-                      >
-                        {subjectNames[subject] ?? subject}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="flex items-center justify-end gap-3 px-1 pt-2">
-                {(selectedSubjects.size > 0 || appliedSubjects.size > 0) && (
-                  <button
-                    onClick={clearFilters}
-                    className="text-[11px] text-gray-400 transition-colors hover:text-gray-600"
-                    data-testid="button-clear-filters"
-                  >
-                    clear all
-                  </button>
-                )}
-                <Button
-                  size="sm"
-                  onClick={applyFilters}
-                  disabled={!hasUnappliedChanges}
-                  data-testid="button-apply-filters"
-                   className={`h-7 rounded-full px-3 text-[11px] font-semibold transition-all ${
-                    hasUnappliedChanges
-                      ? "bg-gray-900 text-white hover:bg-gray-700"
-                      : "bg-gray-100 text-gray-400 cursor-default"
-                  }`}
-                >
-                  {hasUnappliedChanges ? "Apply ✓" : "Applied"}
-                </Button>
-              </div>
-              </div>
-            </div>
-          ) : null}
+           {!controlsCollapsed &&
+             (isLoading ? (
+               <div id="schedule-controls" className="flex gap-2 overflow-hidden">
+                 {[80, 64, 96, 72, 56].map((w) => (
+                   <Skeleton
+                     key={w}
+                     className="h-8 rounded-full"
+                     style={{ width: w }}
+                   />
+                 ))}
+               </div>
+             ) : allSubjects.length > 0 ? (
+               <div id="schedule-controls" className="space-y-2">
+                 <div className="rounded-xl border border-indigo-100/80 bg-white/55 px-2.5 py-2 shadow-sm">
+                   <div className="flex flex-wrap items-center justify-between gap-2">
+                     <div className="min-w-0">
+                       <div className="flex items-center gap-2">
+                         <span className="text-[11px] font-bold uppercase tracking-wide text-gray-600">
+                           Time zone
+                         </span>
+                         <span className="text-[10px] text-gray-400">
+                           local time = {formatOffset(timeOffsetMinutes)}
+                         </span>
+                       </div>
+                       <p className="text-[10px] text-gray-400">
+                         IST + 0:00 keeps India time
+                       </p>
+                     </div>
+                     <div className="flex shrink-0 items-center gap-1.5">
+                       <div className="flex rounded-lg border border-gray-200 bg-white p-0.5">
+                         {(["+", "-"] as const).map((sign) => (
+                           <button
+                             key={sign}
+                             type="button"
+                             onClick={() => setDraftTimeSign(sign)}
+                             aria-pressed={draftTimeSign === sign}
+                             className={`h-6 w-6 rounded-md text-xs font-bold transition-colors ${
+                               draftTimeSign === sign
+                                 ? "bg-indigo-500 text-white"
+                                 : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                             }`}
+                           >
+                             {sign}
+                           </button>
+                         ))}
+                       </div>
+                       <select
+                         value={draftTimeHours}
+                         onChange={(event) => setDraftTimeHours(Number(event.target.value))}
+                         aria-label="Timezone offset hours"
+                         className="h-7 w-12 rounded-lg border border-gray-200 bg-white px-1 text-center text-[11px] font-semibold text-gray-700 outline-none focus:border-indigo-400"
+                       >
+                         {Array.from({ length: 18 }, (_, hour) => (
+                           <option key={hour} value={hour}>
+                             {hour}h
+                           </option>
+                         ))}
+                       </select>
+                       <span className="text-xs font-bold text-gray-400">:</span>
+                       <select
+                         value={draftTimeMinutes}
+                         onChange={(event) => setDraftTimeMinutes(Number(event.target.value))}
+                         aria-label="Timezone offset minutes"
+                         className="h-7 w-14 rounded-lg border border-gray-200 bg-white px-1 text-center text-[11px] font-semibold text-gray-700 outline-none focus:border-indigo-400"
+                       >
+                         {[0, 15, 30, 45].map((minute) => (
+                           <option key={minute} value={minute}>
+                             {String(minute).padStart(2, "0")}m
+                           </option>
+                         ))}
+                       </select>
+                       <Button
+                         size="sm"
+                         type="button"
+                         onClick={applyTimeZone}
+                         disabled={!hasUnappliedTimeZone}
+                         className={`h-7 rounded-full px-2.5 text-[11px] font-semibold ${
+                           hasUnappliedTimeZone
+                             ? "bg-gray-900 text-white hover:bg-gray-700"
+                             : "bg-gray-100 text-gray-400"
+                         }`}
+                       >
+                         Apply
+                       </Button>
+                     </div>
+                   </div>
+                 </div>
+                 <div className="rounded-xl border border-indigo-100/80 bg-white/55 p-2.5 shadow-sm">
+                   <div className="flex items-center justify-between gap-3 px-1 pb-2">
+                     <div className="min-w-0">
+                       <div className="flex items-center gap-2">
+                         <span className="text-[11px] font-bold uppercase tracking-wide text-gray-600">
+                           Filter subjects
+                         </span>
+                         <span className="text-[10px] text-gray-400">
+                           scroll to select
+                         </span>
+                       </div>
+                       <p className="text-[10px] text-gray-400">
+                         Code · full subject name
+                       </p>
+                     </div>
+                     <span
+                       className="shrink-0 rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-600"
+                       data-testid="selected-subject-count"
+                     >
+                       {selectedSubjects.size} selected
+                     </span>
+                   </div>
+                   <div
+                     className="grid max-h-36 grid-cols-1 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2"
+                     style={{ scrollbarWidth: "thin" }}
+                     aria-label="Subject filters"
+                   >
+                     {allSubjects.map((subject) => {
+                       const colors = getSubjectColor(subject, allSubjects);
+                       const isSelected = selectedSubjects.has(subject);
+                       return (
+                         <button
+                           key={subject}
+                           onClick={() => toggleSubject(subject)}
+                           data-testid={`chip-subject-${subject}`}
+                           title={subjectNames[subject] ?? subject}
+                           aria-pressed={isSelected}
+                           className={`flex min-h-9 items-start justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-all duration-150 select-none ${
+                             isSelected
+                               ? `${colors.chip} ${colors.border} shadow-sm`
+                               : "bg-white/85 text-gray-600 border-gray-200 hover:border-indigo-300 hover:bg-white"
+                           }`}
+                         >
+                           <span className="shrink-0 text-[11px] font-bold tracking-wide">
+                             {subject}
+                           </span>
+                           <span
+                             className={`min-w-0 text-[10px] font-medium leading-tight ${
+                               isSelected ? "text-white/90" : "text-gray-500"
+                             }`}
+                           >
+                             {subjectNames[subject] ?? subject}
+                           </span>
+                         </button>
+                       );
+                     })}
+                   </div>
+                   <div className="flex items-center justify-end gap-3 px-1 pt-2">
+                     {(selectedSubjects.size > 0 || appliedSubjects.size > 0) && (
+                       <button
+                         onClick={clearFilters}
+                         className="text-[11px] text-gray-400 transition-colors hover:text-gray-600"
+                         data-testid="button-clear-filters"
+                       >
+                         clear all
+                       </button>
+                     )}
+                     <Button
+                       size="sm"
+                       onClick={applyFilters}
+                       disabled={!hasUnappliedChanges}
+                       data-testid="button-apply-filters"
+                       className={`h-7 rounded-full px-3 text-[11px] font-semibold transition-all ${
+                         hasUnappliedChanges
+                           ? "bg-gray-900 text-white hover:bg-gray-700"
+                           : "bg-gray-100 text-gray-400 cursor-default"
+                       }`}
+                     >
+                       {hasUnappliedChanges ? "Apply ✓" : "Applied"}
+                     </Button>
+                   </div>
+                 </div>
+               </div>
+             ) : null)}
         </div>
       </header>
 
