@@ -1,44 +1,48 @@
-# [Project name]
+# Lecture Tracker
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Lecture schedule and Web Push reminder app for ePGP classmates.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/schedule run dev` — run the frontend (port 23496)
+- `pnpm --filter @workspace/worker run dev` — run the Cloudflare Worker locally when its bindings and secrets are available
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- The Replit run button starts the frontend through the `Start application` workflow.
+- No environment variable is required for the bundled fallback schedule.
+- Set `VITE_API_BASE_URL` to the Worker base URL to use live schedule and reminder APIs.
+- The configured Google Sheets CSV export currently returns HTTP 401 to anonymous requests, so the app uses its bundled schedule until the sheet is made publicly readable or the source URL is replaced.
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
+- pnpm workspaces, Node.js 20+, TypeScript 5.9
+- Frontend: React 19, Vite, TypeScript, Tailwind CSS
+- Production API: Cloudflare Workers, KV, and Web Push
+- Alternative API: Express 5
 - API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Build: Vite
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
-
-## Architecture decisions
-
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- `artifacts/schedule` — React/Vite frontend and bundled schedule fallback
+- `artifacts/worker` — recommended Cloudflare Worker API and reminder scheduler
+- `artifacts/api-server` — Express API alternative
+- `scripts/src/fetch-schedule.ts` — Google Sheets CSV fetcher and schedule parser
+- `DEPLOY.md` — GitHub Pages and Cloudflare deployment guide
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
-
-## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- View today’s and upcoming lectures.
+- Filter the schedule by subject.
+- Save multiple reminder times and optional 15-minute pre-class nudges.
+- Receive Web Push reminders while the selected subjects remain in the timetable.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Web Push requires HTTPS in production, or localhost during development.
+- The frontend intentionally falls back to `artifacts/schedule/public/schedule-data.json` when the Worker or live schedule source is unavailable.
+- Do not commit VAPID private keys; configure them as Cloudflare Worker secrets.
 
 ## Pointers
 
