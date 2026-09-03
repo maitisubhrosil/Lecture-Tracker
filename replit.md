@@ -12,7 +12,7 @@ Lecture schedule and Web Push reminder app for ePGP classmates.
 - The Replit run button starts the frontend through the `Start application` workflow.
 - No environment variable is required for the bundled fallback schedule.
 - Set `VITE_API_BASE_URL` to the Worker base URL to use live schedule and reminder APIs.
-- The configured Google Sheets CSV export currently returns HTTP 401 to anonymous requests, so the app uses its bundled schedule until the sheet is made publicly readable or the source URL is replaced.
+- The schedule refresh uses the public administrator-maintained CSV mirror in the repository, so GitHub Actions and the Worker do not need an interactive university login.
 
 ## Stack
 
@@ -28,7 +28,7 @@ Lecture schedule and Web Push reminder app for ePGP classmates.
 - `artifacts/schedule` — React/Vite frontend and bundled schedule fallback
 - `artifacts/worker` — recommended Cloudflare Worker API and reminder scheduler
 - `artifacts/api-server` — Express API alternative
-- `scripts/src/fetch-schedule.ts` — Google Sheets CSV fetcher and schedule parser
+- `scripts/src/fetch-schedule.ts` — administrator CSV fetcher and schedule parser
 - `DEPLOY.md` — GitHub Pages and Cloudflare deployment guide
 
 ## Product

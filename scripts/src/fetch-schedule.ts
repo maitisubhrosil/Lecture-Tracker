@@ -1,8 +1,12 @@
-import { writeFileSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import path from "path";
 
-const SHEET_CSV_URL =
-  "https://docs.google.com/spreadsheets/d/1ablAhqUS7PEHzyAZLuFnkg7dmdNe5II8/export?format=csv&gid=1928961668";
+// This CSV is maintained by the schedule administrator in the public repository.
+// Keep this URL non-interactive so GitHub Actions can refresh the bundled data
+// without a university account or a stored personal session.
+const SCHEDULE_CSV_URL =
+  process.env.SCHEDULE_CSV_URL ??
+  "https://raw.githubusercontent.com/maitisubhrosil/Lecture-Tracker/main/attached_assets/Term_VI_Schedule_Final_Live.xlsx_-_Sheet1_1788178867780.csv";
 
 const EXCLUDED_SUBJECTS = new Set([
   "Buffer slot",
@@ -28,6 +32,16 @@ interface ScheduleData {
   subjects: string[];
   schedule: DaySchedule[];
   lastFetched: string;
+}
+
+function hasScheduleChanged(previous: ScheduleData, next: ScheduleData): boolean {
+  return JSON.stringify({
+    subjects: previous.subjects,
+    schedule: previous.schedule,
+  }) !== JSON.stringify({
+    subjects: next.subjects,
+    schedule: next.schedule,
+  });
 }
 
 function parseCSV(text: string): string[][] {
@@ -156,10 +170,10 @@ function parseSchedule(csvText: string): ScheduleData {
 }
 
 async function main() {
-  console.log("Fetching schedule from Google Sheets...");
+  console.log("Fetching schedule from the administrator-provided CSV...");
   let response: Response;
   try {
-    response = await fetch(SHEET_CSV_URL, { redirect: "follow" });
+    response = await fetch(SCHEDULE_CSV_URL, { redirect: "follow" });
   } catch (error) {
     console.warn(
       `Warning: live schedule could not be reached (${error instanceof Error ? error.message : String(error)}).`,
@@ -182,6 +196,16 @@ async function main() {
   }
 
   const outputPath = path.resolve("artifacts/schedule/public/schedule-data.json");
+  try {
+    const existingData = JSON.parse(readFileSync(outputPath, "utf8")) as ScheduleData;
+    if (!hasScheduleChanged(existingData, data)) {
+      console.log("✓ Schedule is unchanged; keeping the existing stored data.");
+      return;
+    }
+  } catch {
+    // A missing or unreadable fallback should be replaced by the valid live data.
+  }
+
   mkdirSync(path.dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, JSON.stringify(data, null, 2));
 

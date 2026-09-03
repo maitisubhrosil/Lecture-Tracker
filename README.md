@@ -12,7 +12,7 @@ Live app: <https://maitisubhrosil.github.io/Lecture-Tracker/>
 - Supports an optional 15-minute pre-class nudge before the actual lecture start time.
 - Keeps reminders active until the selected subject's last lecture in the timetable has passed.
 - Sends true Web Push notifications from the backend, so reminders can arrive even when the tab is closed.
-- Refreshes the schedule automatically through GitHub Actions every day at 5:30 AM, 11:30 AM, and 5:30 PM IST.
+- Refreshes the schedule automatically through GitHub Actions every day at 5:30 AM, 11:30 AM, and 5:30 PM IST from the public administrator CSV.
 - Works on phones, tablets, laptops, and desktops. On phones, users can add it to the home screen for app-like access.
 
 ## How classmates should use it
@@ -63,7 +63,7 @@ GitHub Pages frontend
 Cloudflare Worker API
         ├── GET /api/schedule
         ├── Push subscription/reminder CRUD endpoints
-        ├── Google Sheets schedule fetch/cache
+        ├── Public administrator CSV schedule fetch/cache
         ├── Cloudflare KV subscription + reminder storage
         └── 1-minute cron that evaluates reminders and sends Web Push
 ```
@@ -106,7 +106,7 @@ Run the Cloudflare Worker locally:
 pnpm --filter @workspace/worker run dev
 ```
 
-Fetch the latest schedule data from Google Sheets:
+Fetch the latest schedule data from the public administrator CSV:
 
 ```bash
 pnpm --filter @workspace/scripts run fetch-schedule

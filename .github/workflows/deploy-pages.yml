@@ -45,7 +45,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Fetch latest schedule from Google Sheets
+      - name: Fetch latest schedule from the public administrator CSV
         run: pnpm --filter @workspace/scripts run fetch-schedule
 
       - name: Commit updated schedule data

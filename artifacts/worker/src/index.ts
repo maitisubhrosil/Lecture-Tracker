@@ -3,7 +3,7 @@
  *
  * Handles:
  *   GET  /api/healthz
- *   GET  /api/schedule                       proxied + cached from Google Sheets
+ *   GET  /api/schedule                       proxied + cached from the public administrator CSV
  *   GET  /api/push/vapid-public-key
  *   GET  /api/push/stats                    { activeSubscribers }
  *   POST /api/push/test                     { endpoint }
@@ -224,7 +224,7 @@ function parseTimeRangeMinutes(
   return start === null || end === null ? null : { start, end };
 }
 
-// ---------- Schedule (Google Sheets CSV → ScheduleData) ----------
+// ---------- Schedule (administrator CSV → ScheduleData) ----------
 function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
   for (const line of text.split("\n")) {
