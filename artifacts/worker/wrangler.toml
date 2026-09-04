@@ -20,8 +20,8 @@ id = "032728f47f7c4bf99318fc77de550362"
 [vars]
 VAPID_SUBJECT = "mailto:admin@example.com"
 APP_TIME_ZONE = "Asia/Kolkata"
-# Public administrator-maintained CSV mirror; no interactive login is needed.
-SHEET_CSV_URL = "https://raw.githubusercontent.com/maitisubhrosil/Lecture-Tracker/main/attached_assets/Term_VI_Schedule_Final_Live.xlsx_-_Sheet1_1788178867780.csv"
+# Public Google Sheet CSV export; no interactive login is needed.
+SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1xxE-9Z0kaXjGam6Gr8UWMcy2Whz6PqYEnQ-GxdtJ6tI/export?format=csv&gid=1773251166"
 FALLBACK_SCHEDULE_URL = "https://maitisubhrosil.github.io/Lecture-Tracker/schedule-data.json"
 
 # Secrets (set via `wrangler secret put VAPID_PUBLIC_KEY` etc., NEVER commit):

@@ -3,7 +3,7 @@
  *
  * Handles:
  *   GET  /api/healthz
- *   GET  /api/schedule                       proxied + cached from the public administrator CSV
+ *   GET  /api/schedule                       proxied + cached from the public administrator Google Sheet CSV export
  *   GET  /api/push/vapid-public-key
  *   GET  /api/push/stats                    { activeSubscribers }
  *   POST /api/push/test                     { endpoint }

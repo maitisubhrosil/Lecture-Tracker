@@ -1,12 +1,12 @@
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import path from "path";
 
-// This CSV is maintained by the schedule administrator in the public repository.
+// This CSV is exported from the publicly readable administrator Google Sheet.
 // Keep this URL non-interactive so GitHub Actions can refresh the bundled data
 // without a university account or a stored personal session.
 const SCHEDULE_CSV_URL =
   process.env.SCHEDULE_CSV_URL ??
-  "https://raw.githubusercontent.com/maitisubhrosil/Lecture-Tracker/main/attached_assets/Term_VI_Schedule_Final_Live.xlsx_-_Sheet1_1788178867780.csv";
+  "https://docs.google.com/spreadsheets/d/1xxE-9Z0kaXjGam6Gr8UWMcy2Whz6PqYEnQ-GxdtJ6tI/export?format=csv&gid=1773251166";
 
 const EXCLUDED_SUBJECTS = new Set([
   "Buffer slot",

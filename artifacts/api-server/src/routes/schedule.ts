@@ -3,7 +3,7 @@ import { Router } from "express";
 const scheduleRouter = Router();
 
 const SHEET_CSV_URL =
-  "https://docs.google.com/spreadsheets/d/1VZauPSkJxNduZixiecFjoF0c0BmH7NNY6nBNNSnbJac/export?format=csv&gid=502725552";
+  "https://docs.google.com/spreadsheets/d/1xxE-9Z0kaXjGam6Gr8UWMcy2Whz6PqYEnQ-GxdtJ6tI/export?format=csv&gid=1773251166";
 
 interface Session {
   slot: number;
