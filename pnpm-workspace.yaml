@@ -49,6 +49,7 @@ onlyBuiltDependencies:
 
 overrides:
   '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
+  'expo>@expo/cli': 54.0.27
   '@expo/ngrok-bin>@expo/ngrok-bin-darwin-arm64': '-'
   '@expo/ngrok-bin>@expo/ngrok-bin-darwin-x64': '-'
   '@expo/ngrok-bin>@expo/ngrok-bin-freebsd-ia32': '-'
@@ -116,6 +117,7 @@ overrides:
   picomatch@<2.3.2: '>=2.3.2'
   picomatch@>=4.0.0 <4.0.4: '4.0.4'
   postcss@<8.5.10: '>=8.5.10'
+  shell-quote: 1.10.0
   rollup>@rollup/rollup-android-arm-eabi: '-'
   rollup>@rollup/rollup-android-arm64: '-'
   rollup>@rollup/rollup-darwin-arm64: '-'
