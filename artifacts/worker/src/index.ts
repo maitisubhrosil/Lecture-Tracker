@@ -152,6 +152,20 @@ const MONTHS: Record<string, string> = {
   dec: "12",
   december: "12",
 };
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 function appTimeZone(env: Env): string {
   return env.APP_TIME_ZONE || DEFAULT_TIME_ZONE;
@@ -185,17 +199,31 @@ function zonedParts(
 }
 
 function scheduleDateToISO(dateStr: string): string | null {
-  const parts = dateStr.split("-").map((part) => part.trim()).filter(Boolean);
+  const value = dateStr.trim();
+  const slashMatch = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  const parts = slashMatch
+    ? [slashMatch[2]!, slashMatch[1]!, slashMatch[3]!]
+    : value.split("-").map((part) => part.trim()).filter(Boolean);
   if (parts.length < 2 || parts.length > 3) return null;
   const [dayRaw, monthRaw, yearRaw] = parts;
-  const month = MONTHS[monthRaw!.trim().toLowerCase()];
+  const month = slashMatch
+    ? String(Number(monthRaw)).padStart(2, "0")
+    : MONTHS[monthRaw!.toLowerCase()];
   if (!month) return null;
   const day = Number(dayRaw);
-  if (!Number.isInteger(day)) return null;
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
   const yearValue = yearRaw ? Number(yearRaw) : new Date().getFullYear();
   if (!Number.isInteger(yearValue)) return null;
   const year = yearValue < 100 ? 2000 + yearValue : yearValue;
   return `${year}-${month}-${String(day).padStart(2, "0")}`;
+}
+
+function normalizeScheduleDate(dateStr: string): string | null {
+  const iso = scheduleDateToISO(dateStr);
+  if (!iso) return null;
+  const [year, month, day] = iso.split("-");
+  const monthName = MONTH_NAMES[Number(month) - 1];
+  return monthName ? `${Number(day)}-${monthName}-${year}` : null;
 }
 
 function parseClockMinutes(value: string): number | null {
@@ -332,8 +360,8 @@ function parseSchedule(csvText: string): ScheduleData {
   const subjectsSet = new Set<string>();
   let currentWeek = "";
   for (const row of rows) {
-    const dateStr = row[dateColumn];
-    if (!dateStr || !scheduleDateToISO(dateStr)) continue;
+    const dateStr = normalizeScheduleDate(row[dateColumn] ?? "");
+    if (!dateStr) continue;
     const weekCol = row[0];
     const dayCol = row[dayColumn];
     if (weekCol && weekCol.startsWith("Week")) currentWeek = weekCol;

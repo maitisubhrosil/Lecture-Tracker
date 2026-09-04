@@ -16,6 +16,21 @@ const EXCLUDED_SUBJECTS = new Set([
   "Work Shop (CR203)",
 ]);
 
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
 interface Session {
   slot: number;
   time: string;
@@ -42,6 +57,37 @@ function hasScheduleChanged(previous: ScheduleData, next: ScheduleData): boolean
     subjects: next.subjects,
     schedule: next.schedule,
   });
+}
+
+function normalizeScheduleDate(value: string): string | null {
+  const trimmed = value.trim();
+  const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (slashMatch) {
+    const month = Number(slashMatch[1]);
+    const day = Number(slashMatch[2]);
+    const yearValue = Number(slashMatch[3]);
+    if (
+      !Number.isInteger(day) ||
+      !Number.isInteger(month) ||
+      month < 1 ||
+      month > 12 ||
+      !Number.isInteger(yearValue)
+    ) {
+      return null;
+    }
+    const year = yearValue < 100 ? 2000 + yearValue : yearValue;
+    return `${day}-${MONTH_NAMES[month - 1]}-${year}`;
+  }
+
+  const parts = trimmed.split("-").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2 || parts.length > 3) return null;
+  const day = Number(parts[0]);
+  const month = MONTH_NAMES.find(
+    (name) => name.toLowerCase() === parts[1]?.toLowerCase(),
+  );
+  if (!Number.isInteger(day) || !month) return null;
+  if (parts[2] !== undefined && !Number.isInteger(Number(parts[2]))) return null;
+  return parts[2] ? `${day}-${month}-${parts[2]}` : `${day}-${month}`;
 }
 
 function parseCSV(text: string): string[][] {
@@ -128,8 +174,8 @@ function parseSchedule(csvText: string): ScheduleData {
   let currentWeek = "";
 
   for (const row of rows) {
-    const dateStr = row[dateColumn];
-    if (!dateStr || !/^\d{1,2}-[A-Za-z]+(?:-\d{2,4})?$/.test(dateStr.trim())) continue;
+    const dateStr = normalizeScheduleDate(row[dateColumn] ?? "");
+    if (!dateStr) continue;
     if (row[0]?.startsWith("Week")) currentWeek = row[0];
     const dayCol = row[dayColumn];
     if (!dayCol || dayCol === "Day") continue;
